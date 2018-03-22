@@ -173,7 +173,6 @@ namespace MSIL2ASM.x86_64
                     StaticMembers[i].offset = offset;
                     offset += StaticMembers[i].size;
                 }
-                StaticSize = offset;
                 Emitter.EmitStaticStruct(GetTypeName(TargetType) + "_static", StaticSize);
             }
 
@@ -193,20 +192,33 @@ namespace MSIL2ASM.x86_64
                 int offset = 0;
                 for (int i = 0; i < InstanceMembers.Count; i++)
                 {
-
-                    if (!packed)
+                    if (TargetType.IsValueType)
                     {
-                        while (InstanceMembers[i].size <= PointerSize && offset % InstanceMembers[i].size != 0)
-                            offset++;
-
-                        if (InstanceMembers[i].size > PointerSize && offset % PointerSize != 0)
-                            offset += PointerSize - (offset % PointerSize);
+                        InstanceMembers[i].offset = (int)Marshal.OffsetOf(TargetType, InstanceMembers[i].info.Name);
                     }
+                    else
+                    {
+                        if (!packed)
+                        {
+                            while (InstanceMembers[i].size <= PointerSize && offset % InstanceMembers[i].size != 0)
+                                offset++;
 
-                    InstanceMembers[i].offset = offset;
-                    offset += InstanceMembers[i].size;
+                            if (InstanceMembers[i].size > PointerSize && offset % PointerSize != 0)
+                                offset += PointerSize - (offset % PointerSize);
+                        }
+
+                        InstanceMembers[i].offset = offset;
+                        offset += InstanceMembers[i].size;
+                    }
                 }
-                InstanceSize = offset;
+                if (TargetType.IsValueType)
+                {
+                    InstanceSize = Marshal.SizeOf(TargetType);
+                }
+                else
+                {
+                    InstanceSize = offset;
+                }
             }
 
             {

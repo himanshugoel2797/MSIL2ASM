@@ -1,8 +1,9 @@
 ﻿namespace MSIL2ASM.TestOS
 {
-    internal class GDT
+    internal struct GDT
     {
-
+        public int baseT;
+        public int baseU;
         
     }
 }

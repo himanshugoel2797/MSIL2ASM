@@ -12,6 +12,7 @@ namespace MSIL2ASM.x86_64.Nasm
 
         public void EmitStaticStruct(string name, int sz)
         {
+            bss.Add("global " + name);
             bss.Add(name + ": resb " + sz.ToString());
         }
 

@@ -14,6 +14,7 @@ namespace MSIL2ASM.CoreLib
         {
             TypeMappings = new List<KeyValuePair<Type, Type>>();
             TypeMappings.Add(new KeyValuePair<Type, Type>(typeof(System.Object), typeof(Object)));
+            TypeMappings.Add(new KeyValuePair<Type, Type>(typeof(System.ValueType), typeof(ValueType)));
             TypeMappings.Add(new KeyValuePair<Type, Type>(typeof(Builtins.MemoryManager), typeof(Builtins.MemoryManager)));
         }
     }

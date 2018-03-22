@@ -90,7 +90,7 @@ namespace MSIL2ASM.x86_64
             var ps = info.GetParameters();
             for(int i = 0; i < ps.Length; i++)
             {
-                str += i.ToString() + ps[i].ParameterType.Name[0].ToString() + (ps[i].IsOut ? "o" : "") + (ps[i].IsRetval ? "r" : "") + "_";
+                str += i.ToString() + GetTypeName(ps[i].ParameterType) + (ps[i].IsOut ? "o" : "") + (ps[i].IsRetval ? "r" : "") + "_";
             }
 
             return str;
@@ -100,10 +100,12 @@ namespace MSIL2ASM.x86_64
         {
             var str = "ctor_" + GetTypeName(info.ReflectedType) + "_";
 
+            if (info.IsStatic) str = "c" + str;
+
             var ps = info.GetParameters();
             for (int i = 0; i < ps.Length; i++)
             {
-                str += i.ToString() + ps[i].ParameterType.Name[0].ToString() + (ps[i].IsOut ? "o" : "") + (ps[i].IsRetval ? "r" : "") + "_";
+                str += i.ToString() + GetTypeName(ps[i].ParameterType) + (ps[i].IsOut ? "o" : "") + (ps[i].IsRetval ? "r" : "") + "_";
             }
 
             return str;

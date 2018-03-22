@@ -12,5 +12,20 @@ namespace MSIL2ASM.CoreLib
         {
             return "Test";
         }
+
+        public bool Equals(object obj)
+        {
+            return false;
+        }
+
+        public int GetHashCode()
+        {
+            return 0;
+        }
+
+        public static bool Equals(object obj, object o)
+        {
+            return false;
+        }
     }
 }

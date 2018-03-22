@@ -45,14 +45,21 @@ namespace MSIL2ASM
             var refAssemNames = assem.GetReferencedAssemblies();
             foreach (AssemblyName a in refAssemNames)
             {
+                if (a.Name == "mscorlib") continue;
+
                 Assembly a0 = Assembly.Load(a);
-                //types.AddRange(a0.GetTypes());
+                var ts = a0.GetTypes();
+                foreach (Type t in ts)
+                {
+                    dict_realType[t] = t;
+                    types.Add(t);
+                }
             }
 
             foreach (KeyValuePair<Type, Type> t in CoreLib.CorlibMapping.TypeMappings)
             {
                 dict_realType[t.Key] = t.Value;
-                types.Add(t.Key);
+                if (!types.Contains(t.Key)) types.Add(t.Key);
             }
 
             TypeMapper.SetTypeMappings(dict_realType);
@@ -61,7 +68,7 @@ namespace MSIL2ASM
             {
                 //Generate code for each type
                 var backend = backendProvider.GetAssemblyBackend();
-                backend.Reset(t, t);//assem.GetTypes()[0]);
+                backend.Reset(t, t);
 
                 //Instance members
                 {
@@ -94,23 +101,18 @@ namespace MSIL2ASM
                     {
                         if (new MemberTypes[] { MemberTypes.Field }.Contains(m.MemberType))
                             backend.AddStaticMember(m);
-                    }
-
-                    //Add methods
-                    var methods = t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-                    foreach (MethodInfo m in methods)
-                    {
-                        var m_ci = m as MethodInfo;
-                        var fm = dict_realType[t].GetMethod(m.Name, m_ci.GetParameters().Select(a => a.ParameterType).ToArray());
-                        if (fm != null) backend.AddStaticMethod(fm, m_ci);
-                    }
-
-                    var ctors = t.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-                    foreach (ConstructorInfo m in ctors)
-                    {
-                        ConstructorInfo m_ci = m as ConstructorInfo;
-                        var fm = dict_realType[t].GetConstructor(m_ci.GetParameters().Select(a => a.ParameterType).ToArray());
-                        if (fm != null) backend.AddStaticConstructor(fm, m_ci);
+                        else if (m.MemberType == MemberTypes.Method)
+                        {
+                            var m_ci = m as MethodInfo;
+                            var fm = dict_realType[t].GetMethod(m.Name, m_ci.GetParameters().Select(a => a.ParameterType).ToArray());
+                            if (fm != null) backend.AddStaticMethod(fm, m_ci);
+                        }
+                        else if (m.MemberType == MemberTypes.Constructor)
+                        {
+                            ConstructorInfo m_ci = m as ConstructorInfo;
+                            var fm = dict_realType[t].GetConstructor(m_ci.GetParameters().Select(a => a.ParameterType).ToArray());
+                            if (fm != null) backend.AddStaticConstructor(fm, m_ci);
+                        }
                     }
                 }
 

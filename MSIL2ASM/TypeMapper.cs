@@ -18,14 +18,14 @@ namespace MSIL2ASM
 
         public static MemberInfo ResolveMember(Type t, int tkn)
         {
-            if (Mappings.ContainsKey(t))
+            var req_mem = t.Module.ResolveMember(tkn);
+            if (Mappings.ContainsKey(req_mem.DeclaringType))
             {
-                var req_mem = t.Module.ResolveMember(tkn);
-                var actual_mems = Mappings[t].GetMember(req_mem.Name);
+                var actual_mems = Mappings[req_mem.DeclaringType].GetMembers(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
 
                 foreach (MemberInfo a in actual_mems)
                 {
-                    if (a.MemberType == req_mem.MemberType)
+                    if (a.MemberType == req_mem.MemberType && a.Name == req_mem.Name)
                     {
                         if (new MemberTypes[] { MemberTypes.Constructor, MemberTypes.Method }.Contains(a.MemberType))
                         {
@@ -38,6 +38,10 @@ namespace MSIL2ASM
                                 for (int i = 0; i < ps.Length; i++)
                                 {
                                     if (ps[i].ParameterType != ps_o[i].ParameterType)
+                                        isMatch = false;
+                                    if (ps[i].IsOut != ps_o[i].IsOut)
+                                        isMatch = false;
+                                    if (ps[i].IsIn != ps_o[i].IsIn)
                                         isMatch = false;
                                 }
                                 if (isMatch)
