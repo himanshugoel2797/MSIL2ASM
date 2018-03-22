@@ -52,5 +52,12 @@ namespace MSIL2ASM
 
             return t.Module.ResolveMember(tkn);
         }
+
+        public static Type ResolveType(Type t)
+        {
+            if (Mappings.ContainsKey(t))
+                return Mappings[t];
+            return t;
+        }
     }
 }

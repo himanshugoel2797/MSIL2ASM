@@ -141,16 +141,18 @@ namespace MSIL2ASM
 
         public SSAFormByteCode(MethodInfo mthd)
         {
-            module = mthd.Module;
-            body = (TypeMapper.ResolveMember(mthd.DeclaringType, mthd.MetadataToken) as MethodInfo).GetMethodBody();
+            var tmp = (TypeMapper.ResolveMember(mthd.DeclaringType, mthd.MetadataToken) as MethodInfo);
+            module = tmp.Module;
+            body = tmp.GetMethodBody();
             oStack = new Stack<int>();
             StringTable = new List<string>();
         }
 
         public SSAFormByteCode(ConstructorInfo info1)
         {
-            module = info1.Module;
-            body = (TypeMapper.ResolveMember(info1.DeclaringType, info1.MetadataToken) as ConstructorInfo).GetMethodBody();
+            var tmp = (TypeMapper.ResolveMember(info1.DeclaringType, info1.MetadataToken) as ConstructorInfo);
+            module = tmp.Module;
+            body = tmp.GetMethodBody();
 
             oStack = new Stack<int>();
             StringTable = new List<string>();
