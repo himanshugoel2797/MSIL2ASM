@@ -8,12 +8,20 @@ namespace MSIL2ASM.x86_64.Nasm
 {
     partial class NasmEmitter
     {
-        private int MethodStringBase = 0;
-
         public void EmitStaticStruct(string name, int sz)
         {
             bss.Add("global " + name);
-            bss.Add(name + ": resb " + sz.ToString());
+            bss.Add("\t" + name + ": resb " + sz.ToString());
+        }
+
+        public void EmitVtable(string name)
+        {
+            data.Add(name + "_vtable:");
+        }
+
+        public void AddVtableEntry(string name)
+        {
+            data.Add("\tdq " + name);
         }
 
         public void AddString(string str, int idx)

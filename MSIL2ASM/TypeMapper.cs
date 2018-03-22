@@ -10,6 +10,7 @@ namespace MSIL2ASM
     public static class TypeMapper
     {
         private static Dictionary<Type, Type> Mappings;
+        private static Dictionary<string, IAssemblyBackend> backends;
 
         public static void SetTypeMappings(Dictionary<Type, Type> mappings)
         {
@@ -62,6 +63,18 @@ namespace MSIL2ASM
             if (Mappings.ContainsKey(t))
                 return Mappings[t];
             return t;
+        }
+
+        public static IAssemblyBackend ResolveBackend(string name)
+        {
+            if (backends.ContainsKey(name))
+                return backends[name];
+            return null;
+        }
+
+        internal static void SetBackends(Dictionary<string, IAssemblyBackend> bs)
+        {
+            backends = bs;
         }
     }
 }

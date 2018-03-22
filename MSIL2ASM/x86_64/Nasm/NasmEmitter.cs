@@ -142,8 +142,7 @@ namespace MSIL2ASM.x86_64.Nasm
             int locals_sz = 0;
 
             var mthdBody = (TypeMapper.ResolveMember(realInfo.DeclaringType, realInfo.MetadataToken) as ConstructorInfo).GetMethodBody();
-
-
+            
             var locals = mthdBody.LocalVariables;
             foreach (LocalVariableInfo local in locals)
             {
@@ -174,6 +173,12 @@ namespace MSIL2ASM.x86_64.Nasm
 
                 Emitter.SubRegConst((int)AssemRegisters.Rsp, stack_sz);
             }
+            
+            //Setup vtables
+            //Ldarg0
+            //if(arg0 == null){
+            // Install vtables
+            //}
 
             ProcessTokens(backend, realInfo.DeclaringType, true, tokens, strtab);
         }
@@ -321,8 +326,14 @@ namespace MSIL2ASM.x86_64.Nasm
                     case InstructionTypes.Call:
                         EmitCall(resType, tkn);
                         break;
+                    case InstructionTypes.CallVirt:
+                        EmitCallVirt(tkn);
+                        break;
                     case InstructionTypes.LdLoca:
                         EmitLdLoca(tkn);
+                        break;
+                    case InstructionTypes.Newobj:
+                        EmitNewobj(resType, tkn);
                         break;
                     case InstructionTypes.Newarr:
                         EmitNewarr(resType, tkn);
@@ -341,6 +352,9 @@ namespace MSIL2ASM.x86_64.Nasm
                         break;
                     case InstructionTypes.Ldsflda:
                         EmitLdsflda(resType, tkn);
+                        break;
+                    case InstructionTypes.Ldflda:
+                        EmitLdflda(resType, tkn);
                         break;
                     case InstructionTypes.Ceq:
                     case InstructionTypes.Cgt:
@@ -373,17 +387,11 @@ namespace MSIL2ASM.x86_64.Nasm
                     case InstructionTypes.Dup:
                         EmitDup(tkn);
                         break;
-                    case InstructionTypes.Switch:
-                        //Generate static jump tables, emit a single jump instruction
-                        break;
-                    case InstructionTypes.CallVirt:
-                        EmitCallVirt(tkn);
-                        break;
-                    case InstructionTypes.Newobj:
-                        EmitNewobj(resType, tkn);
-                        break;
                     case InstructionTypes.Throw:
 
+                        break;
+                    case InstructionTypes.Switch:
+                        //Generate static jump tables, emit a single jump instruction
                         break;
                     default:
                         throw new NotImplementedException(tkn.Operation.ToString());
@@ -533,6 +541,17 @@ namespace MSIL2ASM.x86_64.Nasm
                 var offset = (int)Marshal.OffsetOf(fInfo.DeclaringType, fInfo.Name);
                 var par1 = (int)Marshal.SizeOf(fInfo.FieldType);
                 Emitter.MovRelativeAddressMultToRegisterSize(PopEvalStack(out int par0), 0, 0, offset, AllocEvalStack(par1), par1);
+            }
+        }
+
+        private void EmitLdflda(Type backend, SSAToken tkn)
+        {
+            var fInfo = TypeMapper.ResolveMember(backend, (int)tkn.Constants[0]) as FieldInfo;
+
+            if (fInfo.DeclaringType.IsValueType)
+            {
+                var offset = (int)Marshal.OffsetOf(fInfo.DeclaringType, fInfo.Name);
+                Emitter.MovLabelRelativeConstantToRegisterSize(GetTypeName(fInfo.ReflectedType) + "_static", offset, AllocEvalStack(AMD64Backend.PointerSize), AMD64Backend.PointerSize);
             }
         }
 
@@ -976,7 +995,7 @@ namespace MSIL2ASM.x86_64.Nasm
             var tName = mthd.ReflectedType;
             var mthdName = AMD64Backend.GetMethodName(mthd);
 
-            if (prefix != GetTypeName(backend))
+            if (prefix != GetTypeName(mthd.DeclaringType))
             {
                 externals.Add(mthdName);
             }
@@ -1043,7 +1062,7 @@ namespace MSIL2ASM.x86_64.Nasm
             var tName = ctor.ReflectedType;
             var mthdName = AMD64Backend.GetMethodName(ctor);
 
-            if (prefix != GetTypeName(backend))
+            if (prefix != GetTypeName(ctor.DeclaringType))
             {
                 externals.Add(mthdName);
             }

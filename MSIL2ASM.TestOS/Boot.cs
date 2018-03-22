@@ -2,7 +2,7 @@
 
 namespace MSIL2ASM.TestOS
 {
-    public class Boot
+    public class Boot : IDisposable
     {
         private static IDT IDT;
         private static GDT GDT;
@@ -41,9 +41,19 @@ namespace MSIL2ASM.TestOS
             //Builtins.x86_64.Out(0x3f8, (byte)'0');
             Builtins.x86_64.Halt();
             IDT = new IDT();
+            IDT.Load();
             //GDT = new GDT();
-            GDT.baseT = 5 * GDT.baseT;
+            //GDT.baseT = 5 * GDT.baseT;
         }
-        
+
+        public void Dispose()
+        {
+            Console.Write("TESTED");
+        }
+
+        public override string ToString()
+        {
+            return "Boot";
+        }
     }
 }

@@ -15,8 +15,8 @@ namespace MSIL2ASM
         void Compile(Dictionary<string, IAssemblyBackend> backends);
         void Resolve(Dictionary<string, IAssemblyBackend> backends);
 
-        int InstanceSize { get; set; }
-        int StaticSize { get; set; }
+        int InstanceSize { get; }
+        int StaticSize { get; }
 
         void AddInstanceConstructor(ConstructorInfo m, ConstructorInfo fakeInfo);
         void AddStaticConstructor(ConstructorInfo m, ConstructorInfo f);

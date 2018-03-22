@@ -32,6 +32,7 @@ namespace MSIL2ASM.x86_64
             public MethodInfo info;
             public MethodInfo fakeInfo;
             public SSAFormByteCode stream;
+            public int offset;
         }
 
         class CtorDesc
@@ -60,8 +61,25 @@ namespace MSIL2ASM.x86_64
         public const int PointerSize = 8;
         public const int EnumSize = 4;
 
-        public int InstanceSize { get; set; }
+        private int PrivInstanceSize { get; set; }
+
+        public int VTableSize { get; set; }
+        public int InstanceSize
+        {
+            get
+            {
+                int rVal = PrivInstanceSize;
+
+                if (!TargetType.IsValueType && TargetType.BaseType != null)
+                {
+                    rVal += (TypeMapper.ResolveBackend(TargetType.BaseType.FullName) as AMD64Backend).InstanceSize;
+                }
+
+                return rVal;
+            }
+        }
         public int StaticSize { get; set; }
+
 
         public void AddInstanceMember(MemberInfo m)
         {
@@ -103,6 +121,75 @@ namespace MSIL2ASM.x86_64
 
         public void Compile(Dictionary<string, IAssemblyBackend> backends)
         {
+
+            List<KeyValuePair<MethodInfo, MethodInfo>> BaseMethods = new List<KeyValuePair<MethodInfo, MethodInfo>>();
+            List<MethodInfo> CurrentMethods = new List<MethodInfo>();
+
+            //First make a vtable for the base class
+            if (!TargetType.IsValueType)
+                for (int i = 0; i < InstanceMethods.Count; i++)
+                {
+                    if (InstanceMethods[i].fakeInfo.IsAbstract | InstanceMethods[i].fakeInfo.IsVirtual)
+                    {
+                        var baseInfo = TargetType.BaseType?.GetMethod(InstanceMethods[i].fakeInfo.Name, InstanceMethods[i].fakeInfo.GetParameters().Select(a => a.ParameterType).ToArray());
+                        if (baseInfo != null)
+                        {
+                            //Add to base class vtable
+                            BaseMethods.Add(new KeyValuePair<MethodInfo, MethodInfo>(InstanceMethods[i].fakeInfo, baseInfo));//TypeMapper.ResolveMember(baseInfo.DeclaringType, baseInfo.MetadataToken) as MethodInfo));                                                                                   //Emitter.AddVtableEntry(GetMethodName(InstanceMethods[i].fakeInfo));
+                        }
+                        else
+                        {
+                            //Add to current class vtable
+                            CurrentMethods.Add(InstanceMethods[i].fakeInfo);
+                        }
+                    }
+                }
+
+
+            if (TargetType.BaseType != null)
+            {
+                Emitter.EmitVtable(GetTypeName(TargetType) + "_super");
+                var baseMethodsSorted = new MethodInfo[BaseMethods.Count];
+                var baseType = backends[TargetType.BaseType.FullName] as AMD64Backend;
+                for (int i = 0; i < BaseMethods.Count; i++)
+                {
+                    baseMethodsSorted[baseType.GetMethodOffset(BaseMethods[i].Value) / 8] = BaseMethods[i].Key;
+                }
+
+                for (int i = 0; i < baseMethodsSorted.Length; i++)
+                {
+                    Emitter.AddVtableEntry(GetMethodName(baseMethodsSorted[i]));
+                }
+            }
+
+
+            Emitter.EmitVtable(GetTypeName(TargetType));
+            var curMethodsSorted = new MethodInfo[CurrentMethods.Count];
+            for (int i = 0; i < CurrentMethods.Count; i++)
+            {
+                curMethodsSorted[GetMethodOffset(CurrentMethods[i]) / 8] = CurrentMethods[i];
+            }
+
+            for (int i = 0; i < curMethodsSorted.Length; i++)
+            {
+                Emitter.AddVtableEntry(GetMethodName(curMethodsSorted[i]));
+            }
+
+            //Make vtables for the interfaces
+            var interfaces = TargetType.GetInterfaces();
+            for (int i = 0; i < interfaces.Length; i++)
+            {
+                Emitter.EmitVtable(GetTypeName(TargetType) + "_" + GetTypeName(interfaces[i]) + "_ITable");
+                var mapping = TargetType.GetInterfaceMap(interfaces[i]);
+
+                for (int j = 0; j < mapping.InterfaceMethods.Length; j++)
+                {
+                    Emitter.AddVtableEntry(GetMethodName(mapping.TargetMethods[i]));
+                }
+            }
+
+            //Add vtables to the class layout
+
             {
                 for (int i = 0; i < StaticMethods.Count; i++)
                 {
@@ -138,6 +225,9 @@ namespace MSIL2ASM.x86_64
                     InstanceCtors[i] = m;
                 }
             }
+
+            //Emit thunks for casting
+
         }
 
         public void Reset(Type t, Type searchType)
@@ -154,6 +244,16 @@ namespace MSIL2ASM.x86_64
             InstanceCtors = new List<CtorDesc>();
             StaticCtors = new List<CtorDesc>();
 
+        }
+
+        public int GetMethodOffset(MethodInfo info)
+        {
+            for (int i = 0; i < InstanceMethods.Count; i++)
+            {
+                if (InstanceMethods[i].fakeInfo == info)
+                    return InstanceMethods[i].offset;
+            }
+            throw new Exception();
         }
 
         public void Resolve(Dictionary<string, IAssemblyBackend> backends)
@@ -189,12 +289,12 @@ namespace MSIL2ASM.x86_64
                     }
                 }
 
-                int offset = 0;
+                int offset = AMD64Backend.PointerSize;
                 for (int i = 0; i < InstanceMembers.Count; i++)
                 {
                     if (TargetType.IsValueType)
                     {
-                        InstanceMembers[i].offset = (int)Marshal.OffsetOf(TargetType, InstanceMembers[i].info.Name);
+                        InstanceMembers[i].offset = (int)Marshal.OffsetOf(TargetType, InstanceMembers[i].info.Name) + AMD64Backend.PointerSize;
                     }
                     else
                     {
@@ -213,11 +313,11 @@ namespace MSIL2ASM.x86_64
                 }
                 if (TargetType.IsValueType)
                 {
-                    InstanceSize = Marshal.SizeOf(TargetType);
+                    PrivInstanceSize = Marshal.SizeOf(TargetType);
                 }
                 else
                 {
-                    InstanceSize = offset;
+                    PrivInstanceSize = offset;
                 }
             }
 
@@ -230,11 +330,19 @@ namespace MSIL2ASM.x86_64
             }
 
             {
+                int offset = 0;
                 for (int i = 0; i < InstanceMethods.Count; i++)
                 {
                     //Generate the method name
                     InstanceMethods[i].methodName = GetMethodName(InstanceMethods[i].fakeInfo);
+
+                    if (InstanceMethods[i].fakeInfo.IsAbstract | InstanceMethods[i].fakeInfo.IsVirtual)
+                    {
+                        InstanceMethods[i].offset = offset;
+                        offset += PointerSize;
+                    }
                 }
+                VTableSize = offset;
             }
 
             {

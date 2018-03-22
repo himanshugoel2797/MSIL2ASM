@@ -51,6 +51,13 @@ namespace MSIL2ASM
                 var ts = a0.GetTypes();
                 foreach (Type t in ts)
                 {
+                    var Is = t.GetInterfaces();
+                    foreach(Type i in Is)
+                    {
+                        dict_realType[i] = i;
+                        types.Add(i);
+                    }
+
                     dict_realType[t] = t;
                     types.Add(t);
                 }
@@ -124,6 +131,8 @@ namespace MSIL2ASM
             {
                 b.Resolve(backends);
             }
+
+            TypeMapper.SetBackends(backends);
 
             foreach (IAssemblyBackend b in backends.Values)
             {

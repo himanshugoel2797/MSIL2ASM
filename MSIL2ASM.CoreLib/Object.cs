@@ -8,17 +8,17 @@ namespace MSIL2ASM.CoreLib
 {
     public class Object
     {
-        public string ToString()
+        public virtual string ToString()
         {
             return "Test";
         }
 
-        public bool Equals(object obj)
+        public virtual bool Equals(object obj)
         {
             return false;
         }
 
-        public int GetHashCode()
+        public virtual int GetHashCode()
         {
             return 0;
         }

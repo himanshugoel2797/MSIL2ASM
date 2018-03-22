@@ -32,16 +32,8 @@ namespace MSIL2ASM.Builtins
 
         }
 
-        /*
-         * [-16] = Additional info
-         * [-8] = Collection info
-         * [-4] = Size of allocation
-         * [0] = Start of object
-         */
-
-        public static ulong AllocateArray(int unit_sz, int len)
+        private static ulong Alloc(uint net_sz)
         {
-            uint net_sz = (uint)(unit_sz * len) + 16;
             if (Block0_CurPointer + net_sz > Block0_CurBlock + Block0_Size)
             {
                 //Trigger collection
@@ -57,12 +49,25 @@ namespace MSIL2ASM.Builtins
                 curPtr_p[3] = net_sz;
             }
 
-            return curPtr + 16;
+            return curPtr;
+        }
+
+        /*
+         * [-16] = Additional info
+         * [-8] = Collection info
+         * [-4] = Size of allocation
+         * [0] = Start of object
+         */
+
+        public static ulong AllocateArray(int unit_sz, int len)
+        {
+            uint net_sz = (uint)(unit_sz * len) + 16;
+            return Alloc(net_sz) + 16;
         }
 
         public static ulong AllocateMemory(int len)
         {
-            return 0;
+            return Alloc((uint)(len + 16)) + 16;
         }
     }
 }
