@@ -4,16 +4,16 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{B8DC60C0-71CD-4114-9FE4-51469EF0E61E}</ProjectGuid>
-    <OutputType>Library</OutputType>
-    <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>MSIL2ASM</RootNamespace>
-    <AssemblyName>MSIL2ASM</AssemblyName>
+    <ProjectGuid>{5EA2F3B9-537A-439D-ADA5-043982AB0DAE}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>MSIL2ASM.Driver</RootNamespace>
+    <AssemblyName>MSIL2ASM.Driver</AssemblyName>
     <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
-    <TargetFrameworkProfile />
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
@@ -21,16 +21,17 @@
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
-    <Prefer32Bit>false</Prefer32Bit>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
     <OutputPath>bin\Release\</OutputPath>
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
-    <Prefer32Bit>false</Prefer32Bit>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
@@ -43,30 +44,16 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="AssemblyParser.cs" />
-    <Compile Include="IAssemblyBackend.cs" />
-    <Compile Include="ILStream.cs" />
+    <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="SSAFormByteCode.cs" />
-    <Compile Include="StackQueue.cs" />
-    <Compile Include="TypeMapper.cs" />
-    <Compile Include="x86_64\AMD64Backend.cs" />
-    <Compile Include="x86_64\AMD64MethodCompiler.cs" />
-    <Compile Include="x86_64\C\CCodeEmitter.cs" />
-    <Compile Include="x86_64\C\CEmitter.cs" />
-    <Compile Include="x86_64\Nasm\Assembly\InstrEmitter.cs" />
-    <Compile Include="x86_64\Nasm\NasmDataEmitter.cs" />
-    <Compile Include="x86_64\Nasm\NasmEmitter.cs" />
-    <Compile Include="x86_64\Nasm\NasmEvalStack.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\MSIL2ASM.Builtins\MSIL2ASM.Builtins.csproj">
-      <Project>{7072af62-63ac-4a56-b303-7e19e2ebe5df}</Project>
-      <Name>MSIL2ASM.Builtins</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\MSIL2ASM.CoreLib\MSIL2ASM.CoreLib.csproj">
-      <Project>{ba9545b6-bec9-4b09-a20c-169d0a276a68}</Project>
-      <Name>MSIL2ASM.CoreLib</Name>
+    <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MSIL2ASM\MSIL2ASM.csproj">
+      <Project>{b8dc60c0-71cd-4114-9fe4-51469ef0e61e}</Project>
+      <Name>MSIL2ASM</Name>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
