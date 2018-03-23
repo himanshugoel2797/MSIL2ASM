@@ -16,33 +16,13 @@ namespace MSIL2ASM.Driver
 
         static void Main(string[] args)
         {
-            //var thisType = typeof(SSAFormByteCode);
-            //var mInfo = thisType.GetMethod(nameof(SSAFormByteCode.Initialize));
-
-            /*var thisType = typeof(Program);
-            var mInfo = thisType.GetMethod(nameof(Program.Test));
-
-
-            SSAFormByteCode byteCode = new SSAFormByteCode(mInfo);
-            byteCode.Initialize();*/
-
-            /*
-            AppDomain dom = AppDomain.CreateDomain("tmpDomain");//, AppDomain.CurrentDomain.Evidence, domainSetup);
-            Type type = typeof(Proxy);
-            var value = (Proxy)dom.CreateInstanceAndUnwrap(
-                type.Assembly.FullName,
-                type.FullName);
-
-            var assem = value.GetAssembly(args[0]);
-            */
-
             Environment.CurrentDirectory = Path.GetDirectoryName(Path.GetFullPath(args[0]));
             AppDomain.CurrentDomain.ReflectionOnlyAssemblyResolve += CurrentDomain_ReflectionOnlyAssemblyResolve;
 
             var assem = Assembly.ReflectionOnlyLoadFrom(Path.GetFullPath(args[0]));
 
             AssemblyParser p = new AssemblyParser(new AMD64BackendProvider());
-            p.Load(assem, "Test");
+            p.Load(assem, args[1]);
         }
 
         private static Assembly CurrentDomain_ReflectionOnlyAssemblyResolve(object sender, ResolveEventArgs args)

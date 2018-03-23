@@ -32,7 +32,7 @@ namespace MSIL2ASM.x86_64.Nasm
         public void InitRegisters()
         {
             //TODO look into having a mode of optimizing the code via shuffling register allocatin orders
-            for (int i = 15; i >= 0; i--)
+            for (int i = 0; i <= 15; i++)
             {
                 if (i == 5) continue;
                 Registers.Push(i);

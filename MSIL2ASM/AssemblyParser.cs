@@ -46,13 +46,14 @@ namespace MSIL2ASM
             foreach (AssemblyName a in refAssemNames)
             {
                 if (a.Name == "mscorlib") continue;
+                if (a.Name == "MSIL2ASM.CoreLib") continue;
 
                 Assembly a0 = Assembly.Load(a);
                 var ts = a0.GetTypes();
                 foreach (Type t in ts)
                 {
                     var Is = t.GetInterfaces();
-                    foreach(Type i in Is)
+                    foreach (Type i in Is)
                     {
                         dict_realType[i] = i;
                         types.Add(i);
@@ -67,6 +68,11 @@ namespace MSIL2ASM
             {
                 dict_realType[t.Key] = t.Value;
                 if (!types.Contains(t.Key)) types.Add(t.Key);
+            }
+
+            foreach (Type t in CoreLib.CorlibMapping.IgnoreTypes)
+            {
+                if (types.Contains(t)) types.Remove(t);
             }
 
             TypeMapper.SetTypeMappings(dict_realType);
@@ -84,17 +90,21 @@ namespace MSIL2ASM
                     foreach (MemberInfo m in members)
                     {
                         if (new MemberTypes[] { MemberTypes.Field }.Contains(m.MemberType))
-                            backend.AddInstanceMember(m);
+                        {
+                            var m_ci = m as FieldInfo;
+                            var fm = dict_realType[t].GetField(m.Name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                            if (fm != null) backend.AddInstanceMember(fm);
+                        }
                         else if (m.MemberType == MemberTypes.Method)
                         {
                             var m_ci = m as MethodInfo;
-                            var fm = dict_realType[t].GetMethod(m.Name, m_ci.GetParameters().Select(a => a.ParameterType).ToArray());
+                            var fm = dict_realType[t].GetMethod(m.Name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, m_ci.GetParameters().Select(a => a.ParameterType).ToArray(), null);
                             if (fm != null) backend.AddInstanceMethod(fm, m_ci);
                         }
                         else if (m.MemberType == MemberTypes.Constructor)
                         {
                             ConstructorInfo m_ci = m as ConstructorInfo;
-                            var fm = dict_realType[t].GetConstructor(m_ci.GetParameters().Select(a => a.ParameterType).ToArray());
+                            var fm = dict_realType[t].GetConstructor(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, m_ci.GetParameters().Select(a => a.ParameterType).ToArray(), null);
                             if (fm != null) backend.AddInstanceConstructor(fm, m_ci);
                         }
                     }
@@ -111,13 +121,13 @@ namespace MSIL2ASM
                         else if (m.MemberType == MemberTypes.Method)
                         {
                             var m_ci = m as MethodInfo;
-                            var fm = dict_realType[t].GetMethod(m.Name, m_ci.GetParameters().Select(a => a.ParameterType).ToArray());
+                            var fm = dict_realType[t].GetMethod(m.Name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, m_ci.GetParameters().Select(a => a.ParameterType).ToArray(), null);
                             if (fm != null) backend.AddStaticMethod(fm, m_ci);
                         }
                         else if (m.MemberType == MemberTypes.Constructor)
                         {
                             ConstructorInfo m_ci = m as ConstructorInfo;
-                            var fm = dict_realType[t].GetConstructor(m_ci.GetParameters().Select(a => a.ParameterType).ToArray());
+                            var fm = dict_realType[t].GetConstructor(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, m_ci.GetParameters().Select(a => a.ParameterType).ToArray(), null);
                             if (fm != null) backend.AddStaticConstructor(fm, m_ci);
                         }
                     }

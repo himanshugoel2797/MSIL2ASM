@@ -108,6 +108,8 @@ namespace MSIL2ASM
         Leave,
         CallVirtConstrained,
         EndFinally,
+        StArg,
+        LdInd,
     }
 
     public enum OperandTypes
@@ -283,7 +285,7 @@ namespace MSIL2ASM
                 tkn.Constants = new ulong[] { instructions.GetParameter(0) };
             }
 
-            if (t == InstructionTypes.StLoc)
+            if (t == InstructionTypes.StLoc | t == InstructionTypes.StArg)
             {
                 tkn.Parameters = new int[] { oStack.Pop() };
             }
@@ -652,6 +654,58 @@ namespace MSIL2ASM
             }
         }
 
+        private void LdindOpCode(ILStream instructions, OpCode opc, InstructionTypes stelem)
+        {
+            var tkn = new SSAToken()
+            {
+                Operation = stelem,
+                Parameters = new int[] { oStack.Pop() },
+                InstructionOffset = instructions.CurrentOffset,
+                Constants = null
+            };
+
+            var parts = opc.Name.Split('.');
+
+            switch (parts[1])
+            {
+                case "i":
+                    tkn.Constants = new ulong[] { (ulong)OperandTypes.I };
+                    break;
+                case "i1":
+                    tkn.Constants = new ulong[] { (ulong)OperandTypes.I1 };
+                    break;
+                case "i2":
+                    tkn.Constants = new ulong[] { (ulong)OperandTypes.I2 };
+                    break;
+                case "i4":
+                    tkn.Constants = new ulong[] { (ulong)OperandTypes.I4 };
+                    break;
+                case "u1":
+                    tkn.Constants = new ulong[] { (ulong)OperandTypes.U1 };
+                    break;
+                case "u2":
+                    tkn.Constants = new ulong[] { (ulong)OperandTypes.U2 };
+                    break;
+                case "u4":
+                    tkn.Constants = new ulong[] { (ulong)OperandTypes.U4 };
+                    break;
+                case "i8":
+                    tkn.Constants = new ulong[] { (ulong)OperandTypes.I8 };
+                    break;
+                case "r4":
+                    tkn.Constants = new ulong[] { (ulong)OperandTypes.R4 };
+                    break;
+                case "r8":
+                    tkn.Constants = new ulong[] { (ulong)OperandTypes.R8 };
+                    break;
+                case "ref":
+                    tkn.Constants = new ulong[] { (ulong)OperandTypes.Object };
+                    break;
+            }
+
+            oStack.Push(tkn.ID);
+        }
+
         private void LdfldOpCode(ILStream instructions, OpCode opc, InstructionTypes newobj)
         {
             var tkn = new SSAToken()
@@ -853,6 +907,10 @@ namespace MSIL2ASM
                 if (new OpCode[] { OpCodes.Ldarg_0, OpCodes.Ldarg_1, OpCodes.Ldarg_2, OpCodes.Ldarg_3, OpCodes.Ldarg, OpCodes.Ldarg_S }.Contains(opc))
                 {
                     EncodedCountOpCode(instructions, opc, InstructionTypes.LdArg);
+                }
+                else if (new OpCode[] { OpCodes.Starg, OpCodes.Starg_S }.Contains(opc))
+                {
+                    EncodedCountOpCode(instructions, opc, InstructionTypes.StArg);
                 }
                 else if (new OpCode[] { OpCodes.Conv_I, OpCodes.Conv_I1, OpCodes.Conv_I2, OpCodes.Conv_I4, OpCodes.Conv_I8, OpCodes.Conv_R4, OpCodes.Conv_R8, OpCodes.Conv_U1, OpCodes.Conv_U2, OpCodes.Conv_U4, OpCodes.Conv_U8, OpCodes.Conv_U, OpCodes.Conv_R_Un }.Contains(opc))
                 {
@@ -1058,6 +1116,10 @@ namespace MSIL2ASM
                 {
                     StindOpCode(instructions, opc, InstructionTypes.Stind);
                 }
+                else if (new OpCode[] { OpCodes.Ldind_I, OpCodes.Ldind_I1, OpCodes.Ldind_I2, OpCodes.Ldind_I4, OpCodes.Ldind_I8, OpCodes.Ldind_U1, OpCodes.Ldind_U2, OpCodes.Ldind_U4, OpCodes.Ldind_R4, OpCodes.Ldind_R8, OpCodes.Ldind_Ref }.Contains(opc))
+                {
+                    LdindOpCode(instructions, opc, InstructionTypes.LdInd);
+                }
                 else if (opc == OpCodes.Ceq)
                 {
                     CompareOpCode(instructions, opc, InstructionTypes.Ceq);
@@ -1158,10 +1220,10 @@ namespace MSIL2ASM
             for (int i = 0; i < SSAToken.Tokens.Count; i++)
             {
                 var cur_tkn = SSAToken.Tokens[i];
-                
-                if(new InstructionTypes[] { }.Contains(cur_tkn.Operation))
+
+                if (new InstructionTypes[] { }.Contains(cur_tkn.Operation))
                 {
-                    
+
                 }
                 else
                 {

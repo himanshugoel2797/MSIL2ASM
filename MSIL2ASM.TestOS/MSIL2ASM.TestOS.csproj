@@ -48,5 +48,10 @@
       <Name>MSIL2ASM.Builtins</Name>
     </ProjectReference>
   </ItemGroup>
+  <ItemGroup>
+    <Reference Include="MSIL2ASM.CoreLib">
+      <HintPath>..\MSIL2ASM.CoreLib\bin\Release\MSIL2ASM.CoreLib.dll</HintPath>
+    </Reference>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

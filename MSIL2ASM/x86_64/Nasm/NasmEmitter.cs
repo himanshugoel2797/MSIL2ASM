@@ -1,4 +1,6 @@
-﻿using MSIL2ASM.x86_64.Nasm.Assembly;
+﻿using MSIL2ASM.Builtins;
+using MSIL2ASM.CoreLib;
+using MSIL2ASM.x86_64.Nasm.Assembly;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -124,8 +126,14 @@ namespace MSIL2ASM.x86_64.Nasm
             Registers = new Stack<int>();
             LocalTopOffset = 0;
             SpillTopOffset = 0;
-            ArgumentTopOffset = -2 * AMD64Backend.PointerSize;  //Top of stack is currently return address, and below that, a single return slot
+            ArgumentTopOffset = 1 * AMD64Backend.PointerSize;  //Top of stack is currently return address, and below that, a single return slot
             InitRegisters();
+
+            if (fakeInfo.DeclaringType.FullName == "System.Object")
+            {
+                //ProcessTokens(backend, realInfo.DeclaringType, true, new SSAToken[] { new SSAToken() { Constants } }, strtab);
+                return;
+            }
 
             //Generate the method entry stub
             var sig = GenerateMethodName(fakeInfo);
@@ -138,11 +146,13 @@ namespace MSIL2ASM.x86_64.Nasm
                 static_ctors.Add(sig);
             }
 
+
+
             //Allocate stack space for the local variables and build the index table for offsets
             int locals_sz = 0;
 
             var mthdBody = (TypeMapper.ResolveMember(realInfo.DeclaringType, realInfo.MetadataToken) as ConstructorInfo).GetMethodBody();
-            
+
             var locals = mthdBody.LocalVariables;
             foreach (LocalVariableInfo local in locals)
             {
@@ -151,6 +161,9 @@ namespace MSIL2ASM.x86_64.Nasm
                 if (local.LocalType.IsValueType)
                     sz = Marshal.SizeOf(local.LocalType);
 
+                if (sz < AMD64Backend.PointerSize)
+                    sz = AMD64Backend.PointerSize;
+
                 locals_sz += sz;
                 Locals.Add(new LocalAllocs()
                 {
@@ -158,27 +171,22 @@ namespace MSIL2ASM.x86_64.Nasm
                     id = local.LocalIndex
                 });
             }
+            Emitter.MakeComment($"Local Stack Size: {locals_sz}");
             if (locals_sz != 0) Emitter.SubRegConst((int)AssemRegisters.Rsp, locals_sz);
 
             LocalTopOffset = 0;
-            ArgumentTopOffset -= locals_sz;
+            ArgumentTopOffset += locals_sz;
 
             //Calculate spill stack space
             var stack_sz = (mthdBody.MaxStackSize - 15) * AMD64Backend.PointerSize;
             if (stack_sz > 0)
             {
                 SpillTopOffset = 0;
-                LocalTopOffset -= stack_sz;
-                ArgumentTopOffset -= stack_sz;
+                LocalTopOffset += stack_sz;
+                ArgumentTopOffset += stack_sz;
 
                 Emitter.SubRegConst((int)AssemRegisters.Rsp, stack_sz);
             }
-            
-            //Setup vtables
-            //Ldarg0
-            //if(arg0 == null){
-            // Install vtables
-            //}
 
             ProcessTokens(backend, realInfo.DeclaringType, true, tokens, strtab);
         }
@@ -201,11 +209,18 @@ namespace MSIL2ASM.x86_64.Nasm
             Registers = new Stack<int>();
             LocalTopOffset = 0;
             SpillTopOffset = 0;
-            ArgumentTopOffset = -2 * AMD64Backend.PointerSize;  //Top of stack is currently return address, and below that, a single return slot
+            ArgumentTopOffset = 1 * AMD64Backend.PointerSize;  //Top of stack is currently return address, and below that, a single return slot
             InitRegisters();
 
             //Generate the method entry stub
             var sig = GenerateMethodName(fakeInfo);
+
+            var attr = realInfo.GetCustomAttributesData().Where(a => a.AttributeType.FullName == typeof(AliasAttribute).FullName);
+            foreach (CustomAttributeData d in attr)
+            {
+                Emitter.MakeGlobalFunction(d.ConstructorArguments[0].Value.ToString());
+            }
+
             Emitter.MakeGlobalFunction(sig);
             Emitter.MakeComment(fakeInfo.Name);
 
@@ -222,6 +237,9 @@ namespace MSIL2ASM.x86_64.Nasm
                 if (local.LocalType.IsValueType)
                     sz = Marshal.SizeOf(local.LocalType);
 
+                if (sz < AMD64Backend.PointerSize)
+                    sz = AMD64Backend.PointerSize;
+
                 locals_sz += sz;
                 Locals.Add(new LocalAllocs()
                 {
@@ -229,18 +247,19 @@ namespace MSIL2ASM.x86_64.Nasm
                     id = local.LocalIndex
                 });
             }
+            Emitter.MakeComment($"Local Stack Size: {locals_sz}");
             if (locals_sz != 0) Emitter.SubRegConst((int)AssemRegisters.Rsp, locals_sz);
 
             LocalTopOffset = 0;
-            ArgumentTopOffset -= locals_sz;
+            ArgumentTopOffset += locals_sz;
 
             //Calculate spill stack space
             var stack_sz = (mthdBody.MaxStackSize - 15) * AMD64Backend.PointerSize;
             if (stack_sz > 0)
             {
                 SpillTopOffset = 0;
-                LocalTopOffset -= stack_sz;
-                ArgumentTopOffset -= stack_sz;
+                LocalTopOffset += stack_sz;
+                ArgumentTopOffset += stack_sz;
 
                 Emitter.SubRegConst((int)AssemRegisters.Rsp, stack_sz);
             }
@@ -324,10 +343,8 @@ namespace MSIL2ASM.x86_64.Nasm
                         EmitLdNull(tkn);
                         break;
                     case InstructionTypes.Call:
-                        EmitCall(resType, tkn);
-                        break;
                     case InstructionTypes.CallVirt:
-                        EmitCallVirt(tkn);
+                        EmitCall(resType, tkn);
                         break;
                     case InstructionTypes.LdLoca:
                         EmitLdLoca(tkn);
@@ -392,6 +409,12 @@ namespace MSIL2ASM.x86_64.Nasm
                         break;
                     case InstructionTypes.Switch:
                         //Generate static jump tables, emit a single jump instruction
+                        break;
+                    case InstructionTypes.StArg:
+                        EmitStArg(tkn);
+                        break;
+                    case InstructionTypes.LdInd:
+                        EmitLdind(tkn);
                         break;
                     default:
                         throw new NotImplementedException(tkn.Operation.ToString());
@@ -536,23 +559,35 @@ namespace MSIL2ASM.x86_64.Nasm
         {
             var fInfo = TypeMapper.ResolveMember(backend, (int)tkn.Constants[0]) as FieldInfo;
 
+            int offset = 0;
+            int par1 = 0;
             if (fInfo.DeclaringType.IsValueType)
             {
-                var offset = (int)Marshal.OffsetOf(fInfo.DeclaringType, fInfo.Name);
-                var par1 = (int)Marshal.SizeOf(fInfo.FieldType);
-                Emitter.MovRelativeAddressMultToRegisterSize(PopEvalStack(out int par0), 0, 0, offset, AllocEvalStack(par1), par1);
+                offset = (int)Marshal.OffsetOf(fInfo.DeclaringType, fInfo.Name);
+                par1 = (int)Marshal.SizeOf(fInfo.FieldType);
             }
+            else
+            {
+
+            }
+            Emitter.MovRelativeAddressMultToRegisterSize(PopEvalStack(out int par0), 0, 0, offset, AllocEvalStack(par1), par1);
         }
 
         private void EmitLdflda(Type backend, SSAToken tkn)
         {
             var fInfo = TypeMapper.ResolveMember(backend, (int)tkn.Constants[0]) as FieldInfo;
+            var b = TypeMapper.ResolveBackend(fInfo.DeclaringType) as AMD64Backend;
 
+            int offset = 0;
             if (fInfo.DeclaringType.IsValueType)
             {
-                var offset = (int)Marshal.OffsetOf(fInfo.DeclaringType, fInfo.Name);
-                Emitter.MovLabelRelativeConstantToRegisterSize(GetTypeName(fInfo.ReflectedType) + "_static", offset, AllocEvalStack(AMD64Backend.PointerSize), AMD64Backend.PointerSize);
+                offset = (int)Marshal.OffsetOf(fInfo.DeclaringType, fInfo.Name);
             }
+            else
+            {
+                b.GetFieldDesc(fInfo.MetadataToken, out offset, out int sz);
+            }
+            Emitter.MovLabelRelativeConstantToRegisterSize(GetTypeName(fInfo.ReflectedType) + "_static", offset, AllocEvalStack(AMD64Backend.PointerSize), AMD64Backend.PointerSize);
         }
 
         private void EmitStsfld(Type backend, SSAToken tkn)
@@ -611,11 +646,47 @@ namespace MSIL2ASM.x86_64.Nasm
             Emitter.MovRegisterToRegisterAddressSize(val.Position, addr.Position, itm_sz);
         }
 
+        private void EmitLdind(SSAToken tkn)
+        {
+            var addr = PopEvalStackFull();
+
+            int itm_sz = 0;
+            //determine itm_sz based on instruction
+            switch ((OperandTypes)tkn.Constants[0])
+            {
+                case OperandTypes.I:
+                case OperandTypes.U:
+                case OperandTypes.I4:
+                case OperandTypes.U4:
+                case OperandTypes.R4:
+                    itm_sz = 4;
+                    break;
+                case OperandTypes.I1:
+                case OperandTypes.U1:
+                    itm_sz = 1;
+                    break;
+                case OperandTypes.I2:
+                case OperandTypes.U2:
+                    itm_sz = 2;
+                    break;
+                case OperandTypes.I8:
+                case OperandTypes.U8:
+                case OperandTypes.R8:
+                case OperandTypes.Object:
+                    itm_sz = 8;
+                    break;
+            }
+
+            Emitter.MovRelativeAddressToRegisterSize(addr.Position, 0, AllocEvalStack(itm_sz), itm_sz);
+        }
+
         private void EmitCmp(SSAToken tkn)
         {
             //compare
-            int reg = AllocEvalStack(AMD64Backend.PointerSize);
-            Emitter.Compare(PopEvalStack(out int ign0), PopEvalStack(out int ing1));
+            var p1 = PopEvalStack(out int ign1);
+            var p0 = PopEvalStack(out int ign0);
+            Emitter.Compare(p0, p1);
+
 
             //Emit branch skipping one instruction
             switch (tkn.Operation)
@@ -637,6 +708,7 @@ namespace MSIL2ASM.x86_64.Nasm
                     break;
             }
 
+            int reg = AllocEvalStack(AMD64Backend.PointerSize);
             Emitter.MovConstantToRegister(0, reg);
             Emitter.JmpRelativeLocalLabel(2);
 
@@ -663,36 +735,42 @@ namespace MSIL2ASM.x86_64.Nasm
                 //Emit overflow check
             }
 
+            bool signed = false;
+            if (new OperandTypes[] { OperandTypes.I, OperandTypes.I1, OperandTypes.I2, OperandTypes.I4, OperandTypes.I8 }.Contains((OperandTypes)tkn.Constants[0]))
+            {
+                signed = true;
+            }
+
             switch ((OperandTypes)tkn.Constants[0])
             {
                 case OperandTypes.I:
                 case OperandTypes.U:
                     {
-                        Emitter.MovRegisterToRegisterSize(PopEvalStack(out int ign0), ign0, AllocEvalStack(4), 4);
+                        Emitter.MovRegisterToRegisterSignSize(PopEvalStack(out int ign0), ign0, AllocEvalStack(4), 4, signed);
                     }
                     break;
                 case OperandTypes.I1:
                 case OperandTypes.U1:
                     {
-                        Emitter.MovRegisterToRegisterSize(PopEvalStack(out int ign0), ign0, AllocEvalStack(1), 1);
+                        Emitter.MovRegisterToRegisterSignSize(PopEvalStack(out int ign0), ign0, AllocEvalStack(1), 1, signed);
                     }
                     break;
                 case OperandTypes.I2:
                 case OperandTypes.U2:
                     {
-                        Emitter.MovRegisterToRegisterSize(PopEvalStack(out int ign0), ign0, AllocEvalStack(2), 2);
+                        Emitter.MovRegisterToRegisterSignSize(PopEvalStack(out int ign0), ign0, AllocEvalStack(2), 2, signed);
                     }
                     break;
                 case OperandTypes.I4:
                 case OperandTypes.U4:
                     {
-                        Emitter.MovRegisterToRegisterSize(PopEvalStack(out int ign0), ign0, AllocEvalStack(4), 4);
+                        Emitter.MovRegisterToRegisterSignSize(PopEvalStack(out int ign0), ign0, AllocEvalStack(4), 4, signed);
                     }
                     break;
                 case OperandTypes.I8:
                 case OperandTypes.U8:
                     {
-                        Emitter.MovRegisterToRegisterSize(PopEvalStack(out int ign0), ign0, AllocEvalStack(8), 8);
+                        Emitter.MovRegisterToRegisterSignSize(PopEvalStack(out int ign0), ign0, AllocEvalStack(8), 8, signed);
                     }
                     break;
                 case OperandTypes.R_U:
@@ -744,22 +822,30 @@ namespace MSIL2ASM.x86_64.Nasm
                     break;
                 case InstructionTypes.Divide:
                     {
-                        Emitter.Divide(PopEvalStack(out int ign0), PopEvalStack(out ign1));
+                        var p1 = PopEvalStack(out int ign0);
+                        var p0 = PopEvalStack(out ign1);
+                        Emitter.Divide(p0, p1);
                     }
                     break;
                 case InstructionTypes.Rem:
                     {
-                        Emitter.Remainder(PopEvalStack(out int ign0), PopEvalStack(out ign1));
+                        var p1 = PopEvalStack(out int ign0);
+                        var p0 = PopEvalStack(out ign1);
+                        Emitter.Remainder(p0, p1);
                     }
                     break;
                 case InstructionTypes.UDivide:
                     {
-                        Emitter.UDivide(PopEvalStack(out int ign0), PopEvalStack(out ign1));
+                        var p1 = PopEvalStack(out int ign0);
+                        var p0 = PopEvalStack(out ign1);
+                        Emitter.UDivide(p0, p1);
                     }
                     break;
                 case InstructionTypes.URem:
                     {
-                        Emitter.URemainder(PopEvalStack(out int ign0), PopEvalStack(out ign1));
+                        var p1 = PopEvalStack(out int ign0);
+                        var p0 = PopEvalStack(out ign1);
+                        Emitter.URemainder(p0, p1);
                     }
                     break;
                 case InstructionTypes.Subtract:
@@ -776,7 +862,9 @@ namespace MSIL2ASM.x86_64.Nasm
                     break;
                 case InstructionTypes.And:
                     {
-                        Emitter.And(PopEvalStack(out int ign0), PopEvalStack(out ign1));
+                        var p0 = PopEvalStack(out int ign0);
+                        var p1 = PopEvalStack(out ign1);
+                        Emitter.And(p0, p1);
                     }
                     break;
                 case InstructionTypes.Or:
@@ -801,17 +889,23 @@ namespace MSIL2ASM.x86_64.Nasm
                     break;
                 case InstructionTypes.Shl:
                     {
-                        Emitter.ShiftLeft(PopEvalStack(out int ign0), PopEvalStack(out ign1));
+                        var p1 = PopEvalStack(out int ign0);
+                        var p0 = PopEvalStack(out ign1);
+                        Emitter.ShiftLeft(p0, p1);
                     }
                     break;
                 case InstructionTypes.Shr:
                     {
-                        Emitter.ShiftRightUn(PopEvalStack(out int ign0), PopEvalStack(out ign1));
+                        var p1 = PopEvalStack(out int ign0);
+                        var p0 = PopEvalStack(out ign1);
+                        Emitter.ShiftRight(p0, p1);
                     }
                     break;
                 case InstructionTypes.ShrUn:
                     {
-                        Emitter.ShiftRightUn(PopEvalStack(out int ign0), PopEvalStack(out ign1));
+                        var p1 = PopEvalStack(out ign1);
+                        var p0 = PopEvalStack(out int ign0);
+                        Emitter.ShiftRightUn(p0, p1);
                     }
                     break;
             }
@@ -873,10 +967,10 @@ namespace MSIL2ASM.x86_64.Nasm
                     Emitter.JmpLtUnRelativeLabel((int)tkn.Constants[0]);
                     break;
                 case InstructionTypes.BrTrue:
-                    Emitter.JmpZeroRelativeLabel((int)tkn.Constants[0]);
+                    Emitter.JmpNZeroRelativeLabel((int)tkn.Constants[0]);
                     break;
                 case InstructionTypes.BrFalse:
-                    Emitter.JmpNZeroRelativeLabel((int)tkn.Constants[0]);
+                    Emitter.JmpZeroRelativeLabel((int)tkn.Constants[0]);
                     break;
             }
         }
@@ -888,6 +982,12 @@ namespace MSIL2ASM.x86_64.Nasm
             Locals[(int)tkn.Constants[0]].TypeSize = r.TypeSize;
             Locals[(int)tkn.Constants[0]].Value = r.Value;
             Locals[(int)tkn.Constants[0]].ValueKnown = r.ValueKnown;
+        }
+
+        private void EmitStArg(SSAToken tkn)
+        {
+            var r = PopEvalStackFull();
+            Emitter.MovRegisterToRegisterRelativeAddress(r.Position, (int)AssemRegisters.Rsp, ArgumentTopOffset + (int)tkn.Constants[0] * AMD64Backend.PointerSize);
         }
 
         private void EmitLdc(SSAToken tkn)
@@ -912,11 +1012,6 @@ namespace MSIL2ASM.x86_64.Nasm
                     Emitter.MovConstantToRegister((ulong)BitConverter.DoubleToInt64Bits((double)tkn.Constants[1]), reg);
                     break;
             }
-        }
-
-        private void EmitCallVirt(SSAToken tkn)
-        {
-            //TODO Call from vtable in object reference
         }
 
         private void EmitCall(Type backend, SSAToken tkn)
@@ -973,9 +1068,9 @@ namespace MSIL2ASM.x86_64.Nasm
                 return;
             }
 
-
+            int saved_cnt = EvalStack.Count - paramCnt;
             //Save currently in use registers on the stack
-            for (int i = 0; i < EvalStack.Count - paramCnt; i++)
+            for (int i = 0; i < saved_cnt; i++)
             {
                 Emitter.Push(EvalStack[EvalStack.Count - 1 - i].Position);
             }
@@ -993,7 +1088,7 @@ namespace MSIL2ASM.x86_64.Nasm
             Emitter.Push((int)AssemRegisters.Rax);
 
             var tName = mthd.ReflectedType;
-            var mthdName = AMD64Backend.GetMethodName(mthd);
+            var mthdName = AMD64Backend.GetMethodName(TypeMapper.ReverseResolveMember(mthd.DeclaringType, mthd.MetadataToken) as MethodInfo);
 
             if (prefix != GetTypeName(mthd.DeclaringType))
             {
@@ -1028,10 +1123,10 @@ namespace MSIL2ASM.x86_64.Nasm
             }
 
             //Remove arguments from stack
-            Emitter.SubRegConst((int)AssemRegisters.Rsp, paramCnt * AMD64Backend.PointerSize + (retValSz == 0 ? AMD64Backend.PointerSize : 0));
+            Emitter.AddRegConst((int)AssemRegisters.Rsp, paramCnt * AMD64Backend.PointerSize + (retValSz == 0 ? AMD64Backend.PointerSize : 0));
 
             //Reload used registers from stack
-            for (int i = 0; i < EvalStack.Count - paramCnt; i++)
+            for (int i = 0; i < saved_cnt; i++)
             {
                 Emitter.Pop(EvalStack[EvalStack.Count - 1 - i].Position);
             }
@@ -1109,7 +1204,7 @@ namespace MSIL2ASM.x86_64.Nasm
         {
             //Move rsp back to previous location
             if (ArgumentTopOffset != -16)
-                Emitter.SubRegConst((int)AssemRegisters.Rsp, (ArgumentTopOffset + 16));
+                Emitter.SubRegConst((int)AssemRegisters.Rsp, (ArgumentTopOffset - 8));
 
             //Write to (rsp - 8) the return value register
             if (StackSize == 1 | isCtor)
@@ -1122,7 +1217,7 @@ namespace MSIL2ASM.x86_64.Nasm
                 }
                 retValReg = PopEvalStack(out int ign0);
 
-                Emitter.MovRegisterToRegisterRelativeAddress(retValReg, (int)AssemRegisters.Rsp, -8);
+                Emitter.MovRegisterToRegisterRelativeAddress(retValReg, (int)AssemRegisters.Rsp, +8);
             }
 
             Emitter.Ret();

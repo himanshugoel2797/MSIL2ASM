@@ -1,4 +1,6 @@
 ﻿using System;
+using MSIL2ASM.Builtins;
+using MSIL2ASM.CoreLib;
 
 namespace MSIL2ASM.TestOS
 {
@@ -8,7 +10,8 @@ namespace MSIL2ASM.TestOS
         private static GDT GDT;
         static int a = 0;
 
-        public static void Main(string[] args)
+        [Alias("_CSEntryPoint")]
+        public static void Main(ulong magic)
         {
             /*
             Builtins.x86_64.Out(0x3f8 + 1, 0x00);    // Disable all interrupts
@@ -20,7 +23,6 @@ namespace MSIL2ASM.TestOS
             Builtins.x86_64.Out(0x3f8 + 4, 0x0B);    // IRQs enabled, RTS/DSR set
 
             Builtins.x86_64.Out(0x3f8, (byte)'T');
-            */
             unsafe
             {
                 //ushort* d = (ushort*)0xb8000
@@ -41,9 +43,18 @@ namespace MSIL2ASM.TestOS
             //Builtins.x86_64.Out(0x3f8, (byte)'0');
             Builtins.x86_64.Halt();
             IDT = new IDT();
-            IDT.Load();
             //GDT = new GDT();
             //GDT.baseT = 5 * GDT.baseT;
+            */
+            string hexTable = "0123456789abcdef";
+
+            while (magic > 0)
+            {
+                x86_64.Out(0x3f8, hexTable[(int)(magic & 0xf)]);
+                magic = magic >> 4;
+            }
+
+            x86_64.Halt();
         }
 
         public void Dispose()

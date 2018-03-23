@@ -252,7 +252,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
         public void MovConstantToRegister(ulong val, int dstReg)
         {
             if (val == 0)
-                LinesAdd($"xor {RegisterName(dstReg)}, {RegisterName(dstReg)}");
+                LinesAdd($"xor {RegisterName(dstReg, 4)}, {RegisterName(dstReg, 4)}");
             else
                 LinesAdd($"mov {RegisterName(dstReg)}, {val}");
         }
@@ -260,7 +260,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
         public void MovConstantToRegisterSize(ulong val, int dstReg, int dst_sz)
         {
             if (val == 0)
-                LinesAdd($"xor {RegisterName(dstReg, dst_sz)}, {RegisterName(dstReg, dst_sz)}");
+                LinesAdd($"xor {RegisterName(dstReg, 4)}, {RegisterName(dstReg, 4)}");
             else
                 LinesAdd($"mov {RegisterName(dstReg, dst_sz)}, {val}");
         }
@@ -281,8 +281,27 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
 
         public void MovRegisterToRegisterSize(int src, int src_size, int dst, int dst_size)
         {
+            if (src_size > dst_size)
+                src_size = dst_size;
+
             if (src != dst | src_size != dst_size)
+            {
                 LinesAdd($"mov {RegisterName(dst, dst_size)}, {RegisterName(src, src_size)}");
+            }
+        }
+
+        public void MovRegisterToRegisterSignSize(int src, int src_size, int dst, int dst_size, bool signed)
+        {
+            if (src_size > dst_size)
+                src_size = dst_size;
+
+            if (src != dst | src_size != dst_size)
+            {
+                if (signed)
+                    LinesAdd($"movsx {RegisterName(dst, dst_size)}, {RegisterName(src, src_size)}");
+                else
+                    LinesAdd($"movzx {RegisterName(dst, dst_size)}, {RegisterName(src, src_size)}");
+            }
         }
 
         public void MovRegisterToRegisterSigned(int src, int src_sz, int dst, int dst_sz)
@@ -338,6 +357,12 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
         public void CheckOverflow(int sz, string target_lbl)
         {
             //TODO jmp to the label on overflow
+        }
+
+
+        public void AddRegConst(int reg, int constV)
+        {
+            LinesAdd($"add {RegisterName(reg)}, {constV.ToString()}");
         }
 
         public void Add(int src, int dst)
@@ -473,11 +498,11 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
 
             if (!rem)
             {
-                MovRegisterToRegister((int)AssemRegisters.Rax, divisor);    //Move quotient
+                MovRegisterToRegister((int)AssemRegisters.Rax, src);    //Move quotient
             }
             else
             {
-                MovRegisterToRegister((int)AssemRegisters.Rdx, divisor);    //Move remainder
+                MovRegisterToRegister((int)AssemRegisters.Rdx, src);    //Move remainder
             }
 
             Pop((int)AssemRegisters.Rdx);
@@ -598,7 +623,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
             }
             else
             {
-                if (srcReg != (int)AssemRegisters.Rdx && srcReg != (int)AssemRegisters.Rax)
+                if (srcReg != (int)AssemRegisters.Rdx && srcReg == (int)AssemRegisters.Rax)
                 {
                     Pop((int)AssemRegisters.Rdx);
                 }
@@ -608,7 +633,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
                     Pop((int)AssemRegisters.Rax);
                 }
 
-                if (srcReg != (int)AssemRegisters.Rdx)
+                if (srcReg != (int)AssemRegisters.Rdx && srcReg != (int)AssemRegisters.Rax)
                 {
                     Pop((int)AssemRegisters.Rdx);
                 }
