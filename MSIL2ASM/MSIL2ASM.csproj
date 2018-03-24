@@ -44,20 +44,22 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AssemblyParser.cs" />
+    <Compile Include="FieldDef.cs" />
+    <Compile Include="Graph.cs" />
     <Compile Include="IAssemblyBackend.cs" />
     <Compile Include="ILStream.cs" />
+    <Compile Include="MachineSpec.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="ReflectionParser.cs" />
     <Compile Include="SSAFormByteCode.cs" />
     <Compile Include="StackQueue.cs" />
     <Compile Include="TypeMapper.cs" />
-    <Compile Include="x86_64\AMD64Backend.cs" />
-    <Compile Include="x86_64\AMD64MethodCompiler.cs" />
-    <Compile Include="x86_64\C\CCodeEmitter.cs" />
-    <Compile Include="x86_64\C\CEmitter.cs" />
     <Compile Include="x86_64\Nasm\Assembly\InstrEmitter.cs" />
     <Compile Include="x86_64\Nasm\NasmDataEmitter.cs" />
     <Compile Include="x86_64\Nasm\NasmEmitter.cs" />
-    <Compile Include="x86_64\Nasm\NasmEvalStack.cs" />
+    <Compile Include="x86_64\Nasm\NasmCodeGenStack.cs" />
+    <Compile Include="x86_64\Nasm\OptimizationToken.cs" />
+    <Compile Include="x86_64\Nasm\OptimizationTokenParser.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\MSIL2ASM.Builtins\MSIL2ASM.Builtins.csproj">

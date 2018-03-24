@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -14,6 +15,8 @@ namespace MSIL2ASM
         public int InstructionOffset;
         public int[] Parameters;
         public ulong[] Constants;
+        public string String;
+        public int RetValSz;
         public InstructionTypes Operation;
 
         public static List<SSAToken> Tokens;
@@ -30,7 +33,7 @@ namespace MSIL2ASM
 
         public override string ToString()
         {
-            return Operation.ToString();
+            return ID.ToString() + " " + Operation.ToString();
         }
     }
 
@@ -110,6 +113,9 @@ namespace MSIL2ASM
         EndFinally,
         StArg,
         LdInd,
+        LdArga,
+        Calli,
+        Ldftn,
     }
 
     public enum OperandTypes
@@ -414,7 +420,6 @@ namespace MSIL2ASM
         private void LdStrOpCode(ILStream instructions, OpCode opc, InstructionTypes t)
         {
             var str = module.ResolveString((int)instructions.GetParameter(0));
-            StringTable.Add(str);
 
             var tkn = new SSAToken()
             {
@@ -422,12 +427,14 @@ namespace MSIL2ASM
                 Parameters = null,
                 Constants = new ulong[] { (ulong)StringTable.Count },
                 InstructionOffset = instructions.CurrentOffset,
+                String = str,
             };
             oStack.Push(tkn.ID);
         }
 
         private void CallOpCode(ILStream instructions, OpCode opc, InstructionTypes call)
         {
+            int retSz = 0;
             Type retType = null;
             ParameterInfo[] @params = null;
 
@@ -437,12 +444,19 @@ namespace MSIL2ASM
             if (mbase is MethodInfo)
             {
                 retType = (mbase as MethodInfo).ReturnType;
+
+                if (retType == typeof(void))
+                    retSz = 0;
+                else if (retType.IsValueType)
+                    retSz = Marshal.SizeOf(retType);
+                else
+                    retSz = MachineSpec.PointerSize;
             }
             else if (mbase is ConstructorInfo)
             {
                 retType = typeof(void);
+                retSz = MachineSpec.PointerSize;
             }
-
 
             var intP = new int[@params.Length + (mbase.IsStatic ? 0 : 1)];
             for (int i = 0; i < intP.Length; i++)
@@ -460,11 +474,14 @@ namespace MSIL2ASM
                 Operation = call,
                 Parameters = intP,
                 InstructionOffset = instructions.CurrentOffset,
+                String = (mbase is MethodInfo) ? MachineSpec.GetMethodName((MethodInfo)mbase) : MachineSpec.GetMethodName((ConstructorInfo)mbase),
+                RetValSz = retSz,
             };
 
             if (call == InstructionTypes.CallVirtConstrained)
             {
-                tkn.Constants = new ulong[] { instructions.GetParameter(0), ConstrainedCallVirt };
+                tkn.Constants = new ulong[] { instructions.GetParameter(0), ConstrainedCallVirt
+    };
                 ConstrainedCallVirt = 0;
             }
             else
@@ -1231,7 +1248,6 @@ namespace MSIL2ASM
                 }
             }
 
-            Tokens = SSAToken.Tokens;
             SSAToken.Tokens = new List<SSAToken>();
         }
 

@@ -50,8 +50,8 @@ namespace MSIL2ASM.TestOS
 
             while (magic > 0)
             {
-                x86_64.Out(0x3f8, hexTable[(int)(magic & 0xf)]);
-                magic = magic >> 4;
+                x86_64.Out(0x3f8, hexTable[(int)(magic % 0xf)]);
+                magic = (magic % 16) / 2;
             }
 
             x86_64.Halt();

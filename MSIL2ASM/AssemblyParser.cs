@@ -1,4 +1,5 @@
-﻿using System;
+﻿using MSIL2ASM.x86_64.Nasm;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -10,37 +11,24 @@ namespace MSIL2ASM
 {
     public class AssemblyParser
     {
-        IAssemblyBackendProvider backendProvider;
-        Dictionary<string, IAssemblyBackend> backends;
 
-        public AssemblyParser(IAssemblyBackendProvider backend)
+        public AssemblyParser()
         {
-            this.backendProvider = backend;
-            backends = new Dictionary<string, IAssemblyBackend>();
+
         }
 
         public void Load(Assembly assem, string outputDir)
         {
             //Add all the types in this assembly.
-            var types = new List<Type>();
+            List<TypeDef> backends = new List<TypeDef>();
             var dict_realType = new Dictionary<Type, Type>();
 
             if (!Directory.Exists(outputDir))
                 Directory.CreateDirectory(outputDir);
 
-            try
-            {
-                var ts = assem.GetTypes();
-                foreach (Type t in ts)
-                {
-                    dict_realType[t] = t;
-                    types.Add(t);
-                }
-            }
-            catch (ReflectionTypeLoadException ex)
-            {
-                Console.WriteLine(ex.LoaderExceptions);
-            }
+            var ts = assem.GetTypes();
+            foreach (Type t in ts)
+                dict_realType[t] = t;
 
             var refAssemNames = assem.GetReferencedAssemblies();
             foreach (AssemblyName a in refAssemNames)
@@ -49,106 +37,34 @@ namespace MSIL2ASM
                 if (a.Name == "MSIL2ASM.CoreLib") continue;
 
                 Assembly a0 = Assembly.Load(a);
-                var ts = a0.GetTypes();
+                ts = a0.GetTypes();
                 foreach (Type t in ts)
-                {
-                    var Is = t.GetInterfaces();
-                    foreach (Type i in Is)
-                    {
-                        dict_realType[i] = i;
-                        types.Add(i);
-                    }
-
                     dict_realType[t] = t;
-                    types.Add(t);
-                }
             }
 
             foreach (KeyValuePair<Type, Type> t in CoreLib.CorlibMapping.TypeMappings)
-            {
                 dict_realType[t.Key] = t.Value;
-                if (!types.Contains(t.Key)) types.Add(t.Key);
-            }
 
             foreach (Type t in CoreLib.CorlibMapping.IgnoreTypes)
-            {
-                if (types.Contains(t)) types.Remove(t);
-            }
+                if (dict_realType.ContainsKey(t))
+                    dict_realType.Remove(t);
 
             TypeMapper.SetTypeMappings(dict_realType);
 
-            foreach (Type t in types)
+            foreach (KeyValuePair<Type, Type> t in dict_realType)
             {
-                //Generate code for each type
-                var backend = backendProvider.GetAssemblyBackend();
-                backend.Reset(t, t);
-
-                //Instance members
-                {
-                    //Add members
-                    var members = t.GetMembers(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    foreach (MemberInfo m in members)
-                    {
-                        if (new MemberTypes[] { MemberTypes.Field }.Contains(m.MemberType))
-                        {
-                            var m_ci = m as FieldInfo;
-                            var fm = dict_realType[t].GetField(m.Name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                            if (fm != null) backend.AddInstanceMember(fm);
-                        }
-                        else if (m.MemberType == MemberTypes.Method)
-                        {
-                            var m_ci = m as MethodInfo;
-                            var fm = dict_realType[t].GetMethod(m.Name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, m_ci.GetParameters().Select(a => a.ParameterType).ToArray(), null);
-                            if (fm != null) backend.AddInstanceMethod(fm, m_ci);
-                        }
-                        else if (m.MemberType == MemberTypes.Constructor)
-                        {
-                            ConstructorInfo m_ci = m as ConstructorInfo;
-                            var fm = dict_realType[t].GetConstructor(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, m_ci.GetParameters().Select(a => a.ParameterType).ToArray(), null);
-                            if (fm != null) backend.AddInstanceConstructor(fm, m_ci);
-                        }
-                    }
-                }
-
-                //Static members
-                {
-                    //Add members
-                    var members = t.GetMembers(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-                    foreach (MemberInfo m in members)
-                    {
-                        if (new MemberTypes[] { MemberTypes.Field }.Contains(m.MemberType))
-                            backend.AddStaticMember(m);
-                        else if (m.MemberType == MemberTypes.Method)
-                        {
-                            var m_ci = m as MethodInfo;
-                            var fm = dict_realType[t].GetMethod(m.Name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, m_ci.GetParameters().Select(a => a.ParameterType).ToArray(), null);
-                            if (fm != null) backend.AddStaticMethod(fm, m_ci);
-                        }
-                        else if (m.MemberType == MemberTypes.Constructor)
-                        {
-                            ConstructorInfo m_ci = m as ConstructorInfo;
-                            var fm = dict_realType[t].GetConstructor(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, m_ci.GetParameters().Select(a => a.ParameterType).ToArray(), null);
-                            if (fm != null) backend.AddStaticConstructor(fm, m_ci);
-                        }
-                    }
-                }
-
-                backends[t.FullName] = backend;
+                var tDef = ReflectionParser.Parse(t.Key, t.Value);
+                if (!backends.Contains(tDef))
+                    backends.Add(tDef);
             }
 
-            //allow all the types to resolve and compile
-            foreach (IAssemblyBackend b in backends.Values)
+            foreach (TypeDef t in backends)
             {
-                b.Resolve(backends);
+                NasmEmitter nasmEmitter = new NasmEmitter(backends);
+                nasmEmitter.Generate(t);
+                File.WriteAllText(Path.Combine(outputDir, MachineSpec.GetTypeName(t) + ".S"), nasmEmitter.GetFile());
             }
 
-            TypeMapper.SetBackends(backends);
-
-            foreach (IAssemblyBackend b in backends.Values)
-            {
-                b.Compile(backends);
-                b.Save(outputDir);
-            }
         }
     }
 }

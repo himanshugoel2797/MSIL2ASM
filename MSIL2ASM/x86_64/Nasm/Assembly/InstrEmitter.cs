@@ -6,24 +6,32 @@ using System.Threading.Tasks;
 
 namespace MSIL2ASM.x86_64.Nasm.Assembly
 {
+    [Flags]
     public enum AssemRegisters
     {
-        Rax,
-        Rbx,
-        Rcx,
-        Rdx,
-        Rbp,
-        Rsp,
-        Rsi,
-        Rdi,
-        R8,
-        R9,
-        R10,
-        R11,
-        R12,
-        R13,
-        R14,
-        R15
+        None = 0,
+        Rax = (1 << 1),
+        Rbx = (1 << 2),
+        Rcx = (1 << 3),
+        Rdx = (1 << 4),
+        Rbp = (1 << 5),
+        Rsp = (1 << 6),
+        Rsi = (1 << 7),
+        Rdi = (1 << 8),
+        R8 = (1 << 9),
+        R9 = (1 << 10),
+        R10 = (1 << 11),
+        R11 = (1 << 12),
+        R12 = (1 << 13),
+        R13 = (1 << 14),
+        R14 = (1 << 15),
+        R15 = (1 << 16),
+        Any = (1 << 17),
+        Const8 = (1 << 28),
+        Const16 = (1 << 29),
+        Const32 = (1 << 30),
+        Const64 = (1 << 31),
+        Const = (Const8 | Const16 | Const32 | Const64),
     }
 
     public class InstrEmitter
@@ -31,35 +39,35 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
         private List<string> Lines;
         private int CurLine;
 
-        private static string RegisterName(int idx, int size)
+        private static string RegisterName(AssemRegisters idx, int size)
         {
             if (size == 8)
                 switch (idx)
                 {
-                    case 0:
+                    case AssemRegisters.Rax:
                         return "rax";
-                    case 1:
+                    case AssemRegisters.Rbx:
                         return "rbx";
-                    case 2:
+                    case AssemRegisters.Rcx:
                         return "rcx";
-                    case 3:
+                    case AssemRegisters.Rdx:
                         return "rdx";
-                    case 4:
+                    case AssemRegisters.Rbp:
                         return "rbp";
-                    case 5:
+                    case AssemRegisters.Rsp:
                         return "rsp";
-                    case 6:
+                    case AssemRegisters.Rsi:
                         return "rsi";
-                    case 7:
+                    case AssemRegisters.Rdi:
                         return "rdi";
-                    case 8:
-                    case 9:
-                    case 10:
-                    case 11:
-                    case 12:
-                    case 13:
-                    case 14:
-                    case 15:
+                    case AssemRegisters.R8:
+                    case AssemRegisters.R9:
+                    case AssemRegisters.R10:
+                    case AssemRegisters.R11:
+                    case AssemRegisters.R12:
+                    case AssemRegisters.R13:
+                    case AssemRegisters.R14:
+                    case AssemRegisters.R15:
                         return "r" + idx.ToString();
                     default:
                         throw new Exception("Unexpected register index");
@@ -67,30 +75,30 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
             else if (size == 4)
                 switch (idx)
                 {
-                    case 0:
+                    case AssemRegisters.Rax:
                         return "eax";
-                    case 1:
+                    case AssemRegisters.Rbx:
                         return "ebx";
-                    case 2:
+                    case AssemRegisters.Rcx:
                         return "ecx";
-                    case 3:
+                    case AssemRegisters.Rdx:
                         return "edx";
-                    case 4:
+                    case AssemRegisters.Rbp:
                         return "ebp";
-                    case 5:
+                    case AssemRegisters.Rsp:
                         return "esp";
-                    case 6:
+                    case AssemRegisters.Rsi:
                         return "esi";
-                    case 7:
+                    case AssemRegisters.Rdi:
                         return "edi";
-                    case 8:
-                    case 9:
-                    case 10:
-                    case 11:
-                    case 12:
-                    case 13:
-                    case 14:
-                    case 15:
+                    case AssemRegisters.R8:
+                    case AssemRegisters.R9:
+                    case AssemRegisters.R10:
+                    case AssemRegisters.R11:
+                    case AssemRegisters.R12:
+                    case AssemRegisters.R13:
+                    case AssemRegisters.R14:
+                    case AssemRegisters.R15:
                         return "r" + idx.ToString() + "d";
                     default:
                         throw new Exception("Unexpected register index");
@@ -98,30 +106,30 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
             else if (size == 2)
                 switch (idx)
                 {
-                    case 0:
+                    case AssemRegisters.Rax:
                         return "ax";
-                    case 1:
+                    case AssemRegisters.Rbx:
                         return "bx";
-                    case 2:
+                    case AssemRegisters.Rcx:
                         return "cx";
-                    case 3:
+                    case AssemRegisters.Rdx:
                         return "dx";
-                    case 4:
+                    case AssemRegisters.Rbp:
                         return "bp";
-                    case 5:
+                    case AssemRegisters.Rsp:
                         return "sp";
-                    case 6:
+                    case AssemRegisters.Rsi:
                         return "si";
-                    case 7:
+                    case AssemRegisters.Rdi:
                         return "di";
-                    case 8:
-                    case 9:
-                    case 10:
-                    case 11:
-                    case 12:
-                    case 13:
-                    case 14:
-                    case 15:
+                    case AssemRegisters.R8:
+                    case AssemRegisters.R9:
+                    case AssemRegisters.R10:
+                    case AssemRegisters.R11:
+                    case AssemRegisters.R12:
+                    case AssemRegisters.R13:
+                    case AssemRegisters.R14:
+                    case AssemRegisters.R15:
                         return "r" + idx.ToString() + "w";
                     default:
                         throw new Exception("Unexpected register index");
@@ -129,30 +137,30 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
             else if (size == 1)
                 switch (idx)
                 {
-                    case 0:
+                    case AssemRegisters.Rax:
                         return "al";
-                    case 1:
+                    case AssemRegisters.Rbx:
                         return "bl";
-                    case 2:
+                    case AssemRegisters.Rcx:
                         return "cl";
-                    case 3:
+                    case AssemRegisters.Rdx:
                         return "dl";
-                    case 4:
+                    case AssemRegisters.Rbp:
                         return "bpl";
-                    case 5:
+                    case AssemRegisters.Rsp:
                         return "spl";
-                    case 6:
+                    case AssemRegisters.Rsi:
                         return "sil";
-                    case 7:
+                    case AssemRegisters.Rdi:
                         return "dil";
-                    case 8:
-                    case 9:
-                    case 10:
-                    case 11:
-                    case 12:
-                    case 13:
-                    case 14:
-                    case 15:
+                    case AssemRegisters.R8:
+                    case AssemRegisters.R9:
+                    case AssemRegisters.R10:
+                    case AssemRegisters.R11:
+                    case AssemRegisters.R12:
+                    case AssemRegisters.R13:
+                    case AssemRegisters.R14:
+                    case AssemRegisters.R15:
                         return "r" + idx.ToString() + "b";
                     default:
                         throw new Exception("Unexpected register index");
@@ -160,7 +168,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
             return null;
         }
 
-        private static string RegisterName(int idx)
+        private static string RegisterName(AssemRegisters idx)
         {
             return RegisterName(idx, 8);
         }
@@ -181,19 +189,19 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
         }
 
         #region Sub
-        public void SubRegConst(int reg, int constV)
+        public void SubRegConst(AssemRegisters reg, int constV)
         {
             LinesAdd($"sub {RegisterName(reg)}, {constV.ToString()}");
         }
         #endregion
 
         #region Mov
-        public void MovLabelAddressToRegister(int reg, string label)
+        public void MovLabelAddressToRegister(AssemRegisters reg, string label)
         {
             LinesAdd($"mov {RegisterName(reg)}, [{label}]");
         }
 
-        public void MovRegisterToRegisterRelativeAddress(int srcReg, int dstReg, int offset)
+        public void MovRegisterToRegisterRelativeAddress(AssemRegisters srcReg, AssemRegisters dstReg, int offset)
         {
             if (offset >= 0)
                 LinesAdd($"mov [{RegisterName(dstReg)} + {offset}], {RegisterName(srcReg)}");
@@ -201,7 +209,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
                 LinesAdd($"mov [{RegisterName(dstReg)} - {-offset}], {RegisterName(srcReg)}");
         }
 
-        public void MovRegisterToRegisterRelativeAddressMultSize(int srcReg, int src_sz, int dstReg, int dstMultReg, int multiplier, int offset)
+        public void MovRegisterToRegisterRelativeAddressMultSize(AssemRegisters srcReg, int src_sz, AssemRegisters dstReg, AssemRegisters dstMultReg, int multiplier, int offset)
         {
             if (offset >= 0)
                 LinesAdd($"mov [{RegisterName(dstReg)} + {RegisterName(dstMultReg)} * {multiplier} + {offset}], {RegisterName(srcReg, src_sz)}");
@@ -209,7 +217,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
                 LinesAdd($"mov [{RegisterName(dstReg)} + {RegisterName(dstMultReg)} * {multiplier} - {-offset}], {RegisterName(srcReg, src_sz)}");
         }
 
-        public void MovRegisterToLabelRelativeAddressSize(int srcReg, int src_sz, string lbl, int offset)
+        public void MovRegisterToLabelRelativeAddressSize(AssemRegisters srcReg, int src_sz, string lbl, int offset)
         {
             if (offset >= 0)
                 LinesAdd($"mov [rel {lbl} + {offset}], {RegisterName(srcReg, src_sz)}");
@@ -217,7 +225,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
                 LinesAdd($"mov [rel {lbl} - {-offset}], {RegisterName(srcReg, src_sz)}");
         }
 
-        public void MovLabelRelativeAddressToRegisterSize(string lbl, int offset, int dstReg, int dstSz)
+        public void MovLabelRelativeAddressToRegisterSize(string lbl, int offset, AssemRegisters dstReg, int dstSz)
         {
             if (offset >= 0)
                 LinesAdd($"mov {RegisterName(dstReg, dstSz)}, [rel {lbl} + {offset}]");
@@ -225,7 +233,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
                 LinesAdd($"mov {RegisterName(dstReg, dstSz)}, [rel {lbl} - {-offset}]");
         }
 
-        public void MovRelativeAddressToRegister(int srcReg, int offset, int dstReg)
+        public void MovRelativeAddressToRegister(AssemRegisters srcReg, int offset, AssemRegisters dstReg)
         {
             if (offset >= 0)
                 LinesAdd($"mov {RegisterName(dstReg)}, [{RegisterName(srcReg)} + {offset}]");
@@ -233,7 +241,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
                 LinesAdd($"mov {RegisterName(dstReg)}, [{RegisterName(srcReg)} - {-offset}]");
         }
 
-        public void MovRelativeAddressToRegisterSize(int srcReg, int offset, int dstReg, int dst_sz)
+        public void MovRelativeAddressToRegisterSize(AssemRegisters srcReg, int offset, AssemRegisters dstReg, int dst_sz)
         {
             if (offset >= 0)
                 LinesAdd($"mov {RegisterName(dstReg, dst_sz)}, [{RegisterName(srcReg)} + {offset}]");
@@ -241,7 +249,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
                 LinesAdd($"mov {RegisterName(dstReg, dst_sz)}, [{RegisterName(srcReg)} - {-offset}]");
         }
 
-        public void MovRelativeAddressMultToRegisterSize(int srcReg, int srcRegMult, int multiplier, int offset, int dstReg, int dst_sz)
+        public void MovRelativeAddressMultToRegisterSize(AssemRegisters srcReg, AssemRegisters srcRegMult, int multiplier, int offset, AssemRegisters dstReg, int dst_sz)
         {
             if (offset >= 0)
                 LinesAdd($"mov {RegisterName(dstReg, dst_sz)}, [{RegisterName(srcReg)} + {multiplier} * {RegisterName(srcRegMult)} + {offset}]");
@@ -249,7 +257,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
                 LinesAdd($"mov {RegisterName(dstReg, dst_sz)}, [{RegisterName(srcReg)} + {multiplier} * {RegisterName(srcRegMult)} - {-offset}]");
         }
 
-        public void MovConstantToRegister(ulong val, int dstReg)
+        public void MovConstantToRegister(ulong val, AssemRegisters dstReg)
         {
             if (val == 0)
                 LinesAdd($"xor {RegisterName(dstReg, 4)}, {RegisterName(dstReg, 4)}");
@@ -257,7 +265,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
                 LinesAdd($"mov {RegisterName(dstReg)}, {val}");
         }
 
-        public void MovConstantToRegisterSize(ulong val, int dstReg, int dst_sz)
+        public void MovConstantToRegisterSize(ulong val, AssemRegisters dstReg, int dst_sz)
         {
             if (val == 0)
                 LinesAdd($"xor {RegisterName(dstReg, 4)}, {RegisterName(dstReg, 4)}");
@@ -265,7 +273,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
                 LinesAdd($"mov {RegisterName(dstReg, dst_sz)}, {val}");
         }
 
-        public void MovLabelRelativeConstantToRegisterSize(string lbl, int off, int dstReg, int dst_sz)
+        public void MovLabelRelativeConstantToRegisterSize(string lbl, int off, AssemRegisters dstReg, int dst_sz)
         {
             if (off >= 0)
                 LinesAdd($"mov {RegisterName(dstReg, dst_sz)}, {lbl} + {off}");
@@ -273,13 +281,13 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
                 LinesAdd($"mov {RegisterName(dstReg, dst_sz)}, {lbl} - {-off}");
         }
 
-        public void MovRegisterToRegister(int src, int dst)
+        public void MovRegisterToRegister(AssemRegisters src, AssemRegisters dst)
         {
             if (src != dst)
                 LinesAdd($"mov {RegisterName(dst)}, {RegisterName(src)}");
         }
 
-        public void MovRegisterToRegisterSize(int src, int src_size, int dst, int dst_size)
+        public void MovRegisterToRegisterSize(AssemRegisters src, int src_size, AssemRegisters dst, int dst_size)
         {
             if (src_size > dst_size)
                 src_size = dst_size;
@@ -290,7 +298,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
             }
         }
 
-        public void MovRegisterToRegisterSignSize(int src, int src_size, int dst, int dst_size, bool signed)
+        public void MovRegisterToRegisterSignSize(AssemRegisters src, int src_size, AssemRegisters dst, int dst_size, bool signed)
         {
             if (src_size > dst_size)
                 src_size = dst_size;
@@ -304,19 +312,19 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
             }
         }
 
-        public void MovRegisterToRegisterSigned(int src, int src_sz, int dst, int dst_sz)
+        public void MovRegisterToRegisterSigned(AssemRegisters src, int src_sz, AssemRegisters dst, int dst_sz)
         {
             if (src != dst)
                 LinesAdd($"movsx {RegisterName(dst, dst_sz)}, {RegisterName(src, src_sz)}");
         }
 
-        public void MovRegisterToRegisterUnsigned(int src, int src_sz, int dst, int dst_sz)
+        public void MovRegisterToRegisterUnsigned(AssemRegisters src, int src_sz, AssemRegisters dst, int dst_sz)
         {
             if (src != dst)
                 LinesAdd($"movzx {RegisterName(dst, dst_sz)}, {RegisterName(src, src_sz)}");
         }
 
-        public void MovRegisterToRegisterAddressSize(int srcReg, int dstReg, int size)
+        public void MovRegisterToRegisterAddressSize(AssemRegisters srcReg, AssemRegisters dstReg, int size)
         {
             LinesAdd($"mov [{RegisterName(dstReg)}], {RegisterName(srcReg, size)}");
         }
@@ -360,73 +368,73 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
         }
 
 
-        public void AddRegConst(int reg, int constV)
+        public void AddRegConst(AssemRegisters reg, int constV)
         {
             LinesAdd($"add {RegisterName(reg)}, {constV.ToString()}");
         }
 
-        public void Add(int src, int dst)
+        public void Add(AssemRegisters src, AssemRegisters dst)
         {
             LinesAdd($"add {RegisterName(dst)}, {RegisterName(src)}");
         }
 
-        public void Sub(int src, int dst)
+        public void Sub(AssemRegisters src, AssemRegisters dst)
         {
             LinesAdd($"sub {RegisterName(dst)}, {RegisterName(src)}");
         }
 
-        public void Multiply(int src, int dst)
+        public void Multiply(AssemRegisters src, AssemRegisters dst)
         {
             LinesAdd($"imul {RegisterName(dst)}, {RegisterName(src)}");
         }
 
-        public void And(int src, int dst)
+        public void And(AssemRegisters src, AssemRegisters dst)
         {
             LinesAdd($"and {RegisterName(dst)}, {RegisterName(src)}");
         }
 
-        public void Or(int src, int dst)
+        public void Or(AssemRegisters src, AssemRegisters dst)
         {
             LinesAdd($"or {RegisterName(dst)}, {RegisterName(src)}");
         }
 
-        public void Xor(int src, int dst)
+        public void Xor(AssemRegisters src, AssemRegisters dst)
         {
             LinesAdd($"xor {RegisterName(dst)}, {RegisterName(src)}");
         }
 
-        public void Neg(int src)
+        public void Neg(AssemRegisters src)
         {
             LinesAdd($"neg {RegisterName(src)}");
         }
 
-        public void Not(int src)
+        public void Not(AssemRegisters src)
         {
             LinesAdd($"not {RegisterName(src)}");
         }
 
         #region Shift
-        public void ShiftLeft(int reg, int amt_reg)
+        public void ShiftLeft(AssemRegisters reg, AssemRegisters amt_reg)
         {
             ShiftGeneric(reg, amt_reg, false, true);
         }
 
-        public void ShiftRight(int reg, int amt_reg)
+        public void ShiftRight(AssemRegisters reg, AssemRegisters amt_reg)
         {
             ShiftGeneric(reg, amt_reg, true, true);
         }
 
-        public void ShiftRightUn(int reg, int amt_reg)
+        public void ShiftRightUn(AssemRegisters reg, AssemRegisters amt_reg)
         {
             ShiftGeneric(reg, amt_reg, true, false);
         }
 
-        private void ShiftGeneric(int reg, int amt_reg, bool right, bool signed)
+        private void ShiftGeneric(AssemRegisters reg, AssemRegisters amt_reg, bool right, bool signed)
         {
-            if (amt_reg != (int)AssemRegisters.Rcx)
+            if (amt_reg != AssemRegisters.Rcx)
             {
-                Push((int)AssemRegisters.Rcx);
-                MovRegisterToRegister(amt_reg, (int)AssemRegisters.Rcx);
+                Push(AssemRegisters.Rcx);
+                MovRegisterToRegister(amt_reg, AssemRegisters.Rcx);
             }
 
             string inst = "";
@@ -447,49 +455,49 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
 
             LinesAdd($"{inst} {RegisterName(reg)}, cl");
 
-            if (amt_reg != (int)AssemRegisters.Rcx)
+            if (amt_reg != AssemRegisters.Rcx)
             {
-                Pop((int)AssemRegisters.Rcx);
+                Pop(AssemRegisters.Rcx);
             }
         }
         #endregion
 
         #region Division
-        public void Divide(int src, int divisor)
+        public void Divide(AssemRegisters src, AssemRegisters divisor)
         {
             Divide(src, divisor, false, true);
         }
 
-        public void Remainder(int src, int divisor)
+        public void Remainder(AssemRegisters src, AssemRegisters divisor)
         {
             Divide(src, divisor, true, true);
         }
 
-        public void UDivide(int src, int divisor)
+        public void UDivide(AssemRegisters src, AssemRegisters divisor)
         {
             Divide(src, divisor, false, false);
         }
 
-        public void URemainder(int src, int divisor)
+        public void URemainder(AssemRegisters src, AssemRegisters divisor)
         {
             Divide(src, divisor, true, false);
         }
 
-        private void Divide(int src, int divisor, bool rem, bool signed)
+        private void Divide(AssemRegisters src, AssemRegisters divisor, bool rem, bool signed)
         {
-            if (src != (int)AssemRegisters.Rax)
+            if (src != AssemRegisters.Rax)
             {
-                Push((int)AssemRegisters.Rax);
-                MovRegisterToRegister(src, (int)AssemRegisters.Rax);
+                Push(AssemRegisters.Rax);
+                MovRegisterToRegister(src, AssemRegisters.Rax);
             }
-            if (divisor == (int)AssemRegisters.Rdx)
+            if (divisor == AssemRegisters.Rdx)
             {
-                Push((int)AssemRegisters.Rbx);
-                MovRegisterToRegister((int)AssemRegisters.Rdx, (int)AssemRegisters.Rbx);
+                Push(AssemRegisters.Rbx);
+                MovRegisterToRegister(AssemRegisters.Rdx, AssemRegisters.Rbx);
             }
 
-            Push((int)AssemRegisters.Rdx);
-            MovConstantToRegister(0, (int)AssemRegisters.Rdx);
+            Push(AssemRegisters.Rdx);
+            MovConstantToRegister(0, AssemRegisters.Rdx);
 
             if (signed)
                 LinesAdd($"idiv {RegisterName(divisor)}");
@@ -498,28 +506,28 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
 
             if (!rem)
             {
-                MovRegisterToRegister((int)AssemRegisters.Rax, src);    //Move quotient
+                MovRegisterToRegister(AssemRegisters.Rax, src);    //Move quotient
             }
             else
             {
-                MovRegisterToRegister((int)AssemRegisters.Rdx, src);    //Move remainder
+                MovRegisterToRegister(AssemRegisters.Rdx, src);    //Move remainder
             }
 
-            Pop((int)AssemRegisters.Rdx);
+            Pop(AssemRegisters.Rdx);
 
-            if (divisor == (int)AssemRegisters.Rdx)
+            if (divisor == AssemRegisters.Rdx)
             {
-                Pop((int)AssemRegisters.Rbx);
+                Pop(AssemRegisters.Rbx);
             }
-            if (src != (int)AssemRegisters.Rax)
+            if (src != AssemRegisters.Rax)
             {
-                Pop((int)AssemRegisters.Rax);
+                Pop(AssemRegisters.Rax);
             }
         }
         #endregion
         #endregion
 
-        public void LoadEffectiveAddress(int src_reg, int offset, int dst_reg)
+        public void LoadEffectiveAddress(AssemRegisters src_reg, int offset, AssemRegisters dst_reg)
         {
             if (offset >= 0)
                 LinesAdd($"lea {RegisterName(dst_reg)}, {RegisterName(src_reg)} + {offset} ");
@@ -527,7 +535,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
                 LinesAdd($"lea {RegisterName(dst_reg)}, {RegisterName(src_reg)} - {-offset} ");
         }
 
-        public void LoadEffectiveMultAddress(int src_reg, int srcRegMult, int multiplier, int offset, int dst_reg)
+        public void LoadEffectiveMultAddress(AssemRegisters src_reg, AssemRegisters srcRegMult, int multiplier, int offset, AssemRegisters dst_reg)
         {
             if (offset >= 0)
                 LinesAdd($"lea {RegisterName(dst_reg)}, {RegisterName(src_reg)} + {RegisterName(srcRegMult)} * {multiplier} + {offset} ");
@@ -555,17 +563,17 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
             LinesAdd("ret");
         }
 
-        public void Push(int reg)
+        public void Push(AssemRegisters reg)
         {
             LinesAdd($"push {RegisterName(reg)}");
         }
 
-        public void Pop(int reg)
+        public void Pop(AssemRegisters reg)
         {
             LinesAdd($"pop {RegisterName(reg)}");
         }
 
-        public void Compare(int v1, int v2)
+        public void Compare(AssemRegisters v1, AssemRegisters v2)
         {
             LinesAdd($"cmp {RegisterName(v1)}, {RegisterName(v2)}");
         }
@@ -587,72 +595,72 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
         }
 
         #region Out
-        public void Out(int srcReg, int src2Reg, int size)
+        public void Out(AssemRegisters srcReg, AssemRegisters src2Reg, int size)
         {
-            if (srcReg == (int)AssemRegisters.Rax && src2Reg == (int)AssemRegisters.Rdx)
+            if (srcReg == AssemRegisters.Rax && src2Reg == AssemRegisters.Rdx)
             {
                 LinesAdd($"xchg rax, rdx");
             }
             else
             {
-                if (srcReg == (int)AssemRegisters.Rax)
+                if (srcReg == AssemRegisters.Rax)
                 {
-                    Push((int)AssemRegisters.Rdx);
-                    MovRegisterToRegisterSize(srcReg, 2, (int)AssemRegisters.Rdx, 2);
+                    Push(AssemRegisters.Rdx);
+                    MovRegisterToRegisterSize(srcReg, 2, AssemRegisters.Rdx, 2);
                 }
 
-                if (src2Reg != (int)AssemRegisters.Rax)
+                if (src2Reg != AssemRegisters.Rax)
                 {
-                    Push((int)AssemRegisters.Rax);
-                    MovRegisterToRegisterSize(src2Reg, size, (int)AssemRegisters.Rax, size);
+                    Push(AssemRegisters.Rax);
+                    MovRegisterToRegisterSize(src2Reg, size, AssemRegisters.Rax, size);
                 }
 
-                if (srcReg != (int)AssemRegisters.Rdx && srcReg != (int)AssemRegisters.Rax)
+                if (srcReg != AssemRegisters.Rdx && srcReg != AssemRegisters.Rax)
                 {
-                    Push((int)AssemRegisters.Rdx);
-                    MovRegisterToRegisterSize(srcReg, 2, (int)AssemRegisters.Rdx, 2);
+                    Push(AssemRegisters.Rdx);
+                    MovRegisterToRegisterSize(srcReg, 2, AssemRegisters.Rdx, 2);
                 }
             }
 
-            LinesAdd($"out {RegisterName((int)AssemRegisters.Rdx, 2)}, {RegisterName((int)AssemRegisters.Rax, size)}");
+            LinesAdd($"out {RegisterName(AssemRegisters.Rdx, 2)}, {RegisterName(AssemRegisters.Rax, size)}");
 
 
-            if (srcReg == (int)AssemRegisters.Rax && src2Reg == (int)AssemRegisters.Rdx)
+            if (srcReg == AssemRegisters.Rax && src2Reg == AssemRegisters.Rdx)
             {
                 LinesAdd($"xchg rax, rdx");
             }
             else
             {
-                if (srcReg != (int)AssemRegisters.Rdx && srcReg == (int)AssemRegisters.Rax)
+                if (srcReg != AssemRegisters.Rdx && srcReg == AssemRegisters.Rax)
                 {
-                    Pop((int)AssemRegisters.Rdx);
+                    Pop(AssemRegisters.Rdx);
                 }
 
-                if (src2Reg != (int)AssemRegisters.Rax)
+                if (src2Reg != AssemRegisters.Rax)
                 {
-                    Pop((int)AssemRegisters.Rax);
+                    Pop(AssemRegisters.Rax);
                 }
 
-                if (srcReg != (int)AssemRegisters.Rdx && srcReg != (int)AssemRegisters.Rax)
+                if (srcReg != AssemRegisters.Rdx && srcReg != AssemRegisters.Rax)
                 {
-                    Pop((int)AssemRegisters.Rdx);
+                    Pop(AssemRegisters.Rdx);
                 }
             }
         }
 
-        public void OutConst(int src_addr, int srcReg, int size)
+        public void OutConst(AssemRegisters src_addr, AssemRegisters srcReg, int size)
         {
-            if (srcReg != (int)AssemRegisters.Rax)
+            if (srcReg != AssemRegisters.Rax)
             {
-                Push((int)AssemRegisters.Rax);
-                MovRegisterToRegisterSize(srcReg, size, (int)AssemRegisters.Rax, size);
+                Push(AssemRegisters.Rax);
+                MovRegisterToRegisterSize(srcReg, size, AssemRegisters.Rax, size);
             }
 
-            LinesAdd($"out {src_addr}, {RegisterName((int)AssemRegisters.Rax, size)}");
+            LinesAdd($"out {src_addr}, {RegisterName(AssemRegisters.Rax, size)}");
 
-            if (srcReg != (int)AssemRegisters.Rax)
+            if (srcReg != AssemRegisters.Rax)
             {
-                Pop((int)AssemRegisters.Rax);
+                Pop(AssemRegisters.Rax);
             }
         }
         #endregion
@@ -758,7 +766,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
         }
         #endregion
 
-        public void TestBool(int reg)
+        public void TestBool(AssemRegisters reg)
         {
             LinesAdd($"test {RegisterName(reg)}, {RegisterName(reg)}");
         }

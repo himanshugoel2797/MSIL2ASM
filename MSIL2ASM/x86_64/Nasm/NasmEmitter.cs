@@ -22,7 +22,7 @@ namespace MSIL2ASM.x86_64.Nasm
             public ulong Value;
         }
 
-        private Dictionary<string, IAssemblyBackend> types;
+        private List<TypeDef> types;
         private List<string> Lines;
         private List<string> data;
         private List<string> bss;
@@ -38,7 +38,7 @@ namespace MSIL2ASM.x86_64.Nasm
         private int SpillCurOffset = 0;
         private List<LocalAllocs> Locals;
 
-        public NasmEmitter(Dictionary<string, IAssemblyBackend> types)
+        public NasmEmitter(List<TypeDef> types)
         {
             Lines = new List<string>();
             data = new List<string>();
@@ -46,30 +46,8 @@ namespace MSIL2ASM.x86_64.Nasm
             stringTable = new List<string>();
             externals = new List<string>();
             static_ctors = new List<string>();
-
+            Emitter = new InstrEmitter();
             this.types = types;
-        }
-
-        private string GetTypeName(Type t)
-        {
-            return AMD64Backend.GetTypeName(t);
-        }
-
-        private string GetTypeRefName(Type t)
-        {
-            if (t.IsValueType)
-                return GetTypeName(t);
-            return GetTypeName(t) + "*";
-        }
-
-        private string GenerateMethodName(MethodInfo info)
-        {
-            return AMD64Backend.GetMethodName(info);
-        }
-
-        private string GenerateMethodName(ConstructorInfo info)
-        {
-            return AMD64Backend.GetMethodName(info);
         }
 
         private string GenerateVariableName(int id)
@@ -109,1150 +87,356 @@ namespace MSIL2ASM.x86_64.Nasm
             foreach (string s in Lines)
                 file += s + "\n";
 
-            //TODO emit a section for static ctors
-
             return file;
         }
 
-        public void Process(ConstructorInfo fakeInfo, ConstructorInfo realInfo, SSAToken[] tokens, string[] strtab)
+        public void Generate(TypeDef tDef)
         {
-            var backend = types[fakeInfo.ReflectedType.FullName] as AMD64Backend;
-            prefix = GetTypeName(fakeInfo.ReflectedType);
-            Emitter = new InstrEmitter();
+            EmitStaticStruct(MachineSpec.GetTypeName(tDef) + "_static", tDef.StaticSize);
 
-            //Initialize method state
-            Locals = new List<LocalAllocs>();
-            EvalStack = new StackQueue<StackAllocs>();
-            Registers = new Stack<int>();
-            LocalTopOffset = 0;
-            SpillTopOffset = 0;
-            ArgumentTopOffset = 1 * AMD64Backend.PointerSize;  //Top of stack is currently return address, and below that, a single return slot
-            InitRegisters();
+            for (int i = 0; i < tDef.StaticMethods.Length; i++)
+                GenerateMethod(tDef, tDef.StaticMethods[i]);
 
-            if (fakeInfo.DeclaringType.FullName == "System.Object")
-            {
-                //ProcessTokens(backend, realInfo.DeclaringType, true, new SSAToken[] { new SSAToken() { Constants } }, strtab);
-                return;
-            }
+            for (int i = 0; i < tDef.InstanceMethods.Length; i++)
+                GenerateMethod(tDef, tDef.InstanceMethods[i]);
 
-            //Generate the method entry stub
-            var sig = GenerateMethodName(fakeInfo);
-            Emitter.MakeGlobalFunction(sig);
-            Emitter.MakeComment(fakeInfo.Name);
-
-            if (fakeInfo.IsStatic)
-            {
-                //Called on module load
-                static_ctors.Add(sig);
-            }
-
-
-
-            //Allocate stack space for the local variables and build the index table for offsets
-            int locals_sz = 0;
-
-            var mthdBody = (TypeMapper.ResolveMember(realInfo.DeclaringType, realInfo.MetadataToken) as ConstructorInfo).GetMethodBody();
-
-            var locals = mthdBody.LocalVariables;
-            foreach (LocalVariableInfo local in locals)
-            {
-                int sz = AMD64Backend.PointerSize;
-
-                if (local.LocalType.IsValueType)
-                    sz = Marshal.SizeOf(local.LocalType);
-
-                if (sz < AMD64Backend.PointerSize)
-                    sz = AMD64Backend.PointerSize;
-
-                locals_sz += sz;
-                Locals.Add(new LocalAllocs()
-                {
-                    sz = sz,
-                    id = local.LocalIndex
-                });
-            }
-            Emitter.MakeComment($"Local Stack Size: {locals_sz}");
-            if (locals_sz != 0) Emitter.SubRegConst((int)AssemRegisters.Rsp, locals_sz);
-
-            LocalTopOffset = 0;
-            ArgumentTopOffset += locals_sz;
-
-            //Calculate spill stack space
-            var stack_sz = (mthdBody.MaxStackSize - 15) * AMD64Backend.PointerSize;
-            if (stack_sz > 0)
-            {
-                SpillTopOffset = 0;
-                LocalTopOffset += stack_sz;
-                ArgumentTopOffset += stack_sz;
-
-                Emitter.SubRegConst((int)AssemRegisters.Rsp, stack_sz);
-            }
-
-            ProcessTokens(backend, realInfo.DeclaringType, true, tokens, strtab);
-        }
-
-        public void Process(MethodInfo info, SSAToken[] tokens, string[] strtab)
-        {
-            Process(info, info, tokens, strtab);
-        }
-
-        //TODO cleanup this type translation mess before proceeding
-        public void Process(MethodInfo fakeInfo, MethodInfo realInfo, SSAToken[] tokens, string[] strtab)
-        {
-            var backend = types[fakeInfo.ReflectedType.FullName] as AMD64Backend;
-            prefix = GetTypeName(fakeInfo.ReflectedType);
-            Emitter = new InstrEmitter();
-
-            //Initialize method state
-            Locals = new List<LocalAllocs>();
-            EvalStack = new StackQueue<StackAllocs>();
-            Registers = new Stack<int>();
-            LocalTopOffset = 0;
-            SpillTopOffset = 0;
-            ArgumentTopOffset = 1 * AMD64Backend.PointerSize;  //Top of stack is currently return address, and below that, a single return slot
-            InitRegisters();
-
-            //Generate the method entry stub
-            var sig = GenerateMethodName(fakeInfo);
-
-            var attr = realInfo.GetCustomAttributesData().Where(a => a.AttributeType.FullName == typeof(AliasAttribute).FullName);
-            foreach (CustomAttributeData d in attr)
-            {
-                Emitter.MakeGlobalFunction(d.ConstructorArguments[0].Value.ToString());
-            }
-
-            Emitter.MakeGlobalFunction(sig);
-            Emitter.MakeComment(fakeInfo.Name);
-
-            //Allocate stack space for the local variables and build the index table for offsets
-            int locals_sz = 0;
-            var mthdBody = (TypeMapper.ResolveMember(realInfo.DeclaringType, realInfo.MetadataToken) as MethodInfo).GetMethodBody();
-
-
-            var locals = mthdBody.LocalVariables;
-            foreach (LocalVariableInfo local in locals)
-            {
-                int sz = AMD64Backend.PointerSize;
-
-                if (local.LocalType.IsValueType)
-                    sz = Marshal.SizeOf(local.LocalType);
-
-                if (sz < AMD64Backend.PointerSize)
-                    sz = AMD64Backend.PointerSize;
-
-                locals_sz += sz;
-                Locals.Add(new LocalAllocs()
-                {
-                    sz = sz,
-                    id = local.LocalIndex
-                });
-            }
-            Emitter.MakeComment($"Local Stack Size: {locals_sz}");
-            if (locals_sz != 0) Emitter.SubRegConst((int)AssemRegisters.Rsp, locals_sz);
-
-            LocalTopOffset = 0;
-            ArgumentTopOffset += locals_sz;
-
-            //Calculate spill stack space
-            var stack_sz = (mthdBody.MaxStackSize - 15) * AMD64Backend.PointerSize;
-            if (stack_sz > 0)
-            {
-                SpillTopOffset = 0;
-                LocalTopOffset += stack_sz;
-                ArgumentTopOffset += stack_sz;
-
-                Emitter.SubRegConst((int)AssemRegisters.Rsp, stack_sz);
-            }
-            ProcessTokens(backend, realInfo.DeclaringType, false, tokens, strtab);
-        }
-
-        private void ProcessTokens(AMD64Backend backend, Type resType, bool isCtor, SSAToken[] tokens, string[] strtab)
-        {
-            //Interpret the tokens
-            for (int i = 0; i < tokens.Length; i++)
-            {
-                var tkn = tokens[i];
-
-                Emitter.MakeLineLabel(tkn.InstructionOffset);
-
-#if DEBUG
-                Console.WriteLine(tkn.Operation);
-#endif
-
-                switch (tkn.Operation)
-                {
-                    case InstructionTypes.LdArg:
-                        EmitLdArg(tkn);
-                        break;
-                    case InstructionTypes.StLoc:
-                        EmitStLoc(tkn);
-                        break;
-                    case InstructionTypes.LdLoc:
-                        EmitLdLoc(tkn);
-                        break;
-                    case InstructionTypes.Ldc:
-                        EmitLdc(tkn);
-                        break;
-                    case InstructionTypes.Convert:
-                    case InstructionTypes.ConvertCheckOverflow:
-                        EmitConvert(tkn);
-                        break;
-                    case InstructionTypes.Multiply:
-                    case InstructionTypes.Divide:
-                    case InstructionTypes.UDivide:
-                    case InstructionTypes.Add:
-                    case InstructionTypes.UAddCheckOverflow:
-                    case InstructionTypes.AddCheckOverflow:
-                    case InstructionTypes.Subtract:
-                    case InstructionTypes.USubtractCheckOverflow:
-                    case InstructionTypes.SubtractCheckOverflow:
-                    case InstructionTypes.Rem:
-                    case InstructionTypes.URem:
-                    case InstructionTypes.And:
-                    case InstructionTypes.Or:
-                    case InstructionTypes.Xor:
-                    case InstructionTypes.Shl:
-                    case InstructionTypes.Shr:
-                    case InstructionTypes.ShrUn:
-                    case InstructionTypes.Neg:
-                    case InstructionTypes.Not:
-                        EmitMath(tkn);
-                        break;
-                    case InstructionTypes.BrFalse:
-                    case InstructionTypes.BrTrue:
-                    case InstructionTypes.Br:
-                    case InstructionTypes.Beq:
-                    case InstructionTypes.BneUn:
-                    case InstructionTypes.Bgt:
-                    case InstructionTypes.BgtUn:
-                    case InstructionTypes.Blt:
-                    case InstructionTypes.BltUn:
-                    case InstructionTypes.BleUn:
-                    case InstructionTypes.BgeUn:
-                    case InstructionTypes.Ble:
-                    case InstructionTypes.Bge:
-                        EmitBranch(tkn);
-                        break;
-                    case InstructionTypes.Ret:
-                        EmitRet(isCtor, tkn);
-                        break;
-                    case InstructionTypes.LdStr:
-                        EmitLdStr(tkn, strtab);
-                        break;
-                    case InstructionTypes.LdNull:
-                        EmitLdNull(tkn);
-                        break;
-                    case InstructionTypes.Call:
-                    case InstructionTypes.CallVirt:
-                        EmitCall(resType, tkn);
-                        break;
-                    case InstructionTypes.LdLoca:
-                        EmitLdLoca(tkn);
-                        break;
-                    case InstructionTypes.Newobj:
-                        EmitNewobj(resType, tkn);
-                        break;
-                    case InstructionTypes.Newarr:
-                        EmitNewarr(resType, tkn);
-                        break;
-                    case InstructionTypes.Stsfld:
-                        EmitStsfld(resType, tkn);
-                        break;
-                    case InstructionTypes.Stfld:
-                        EmitStfld(resType, tkn);
-                        break;
-                    case InstructionTypes.Ldfld:
-                        EmitLdfld(resType, tkn);
-                        break;
-                    case InstructionTypes.Ldsfld:
-                        EmitLdsfld(resType, tkn);
-                        break;
-                    case InstructionTypes.Ldsflda:
-                        EmitLdsflda(resType, tkn);
-                        break;
-                    case InstructionTypes.Ldflda:
-                        EmitLdflda(resType, tkn);
-                        break;
-                    case InstructionTypes.Ceq:
-                    case InstructionTypes.Cgt:
-                    case InstructionTypes.CgtUn:
-                    case InstructionTypes.Clt:
-                    case InstructionTypes.CltUn:
-                        EmitCmp(tkn);
-                        break;
-                    case InstructionTypes.Pop:
-                        EmitPop(tkn);
-                        break;
-                    case InstructionTypes.Ldelema:
-                        EmitLdelema(tkn);
-                        break;
-                    case InstructionTypes.Ldelem:
-                        EmitLdelem(tkn);
-                        break;
-                    case InstructionTypes.Ldlen:
-                        EmitLdlen(tkn);
-                        break;
-                    case InstructionTypes.Stelem:
-                        EmitStelem(tkn);
-                        break;
-                    case InstructionTypes.Stind:
-                        EmitStind(tkn);
-                        break;
-                    case InstructionTypes.Nop:
-
-                        break;
-                    case InstructionTypes.Dup:
-                        EmitDup(tkn);
-                        break;
-                    case InstructionTypes.Throw:
-
-                        break;
-                    case InstructionTypes.Switch:
-                        //Generate static jump tables, emit a single jump instruction
-                        break;
-                    case InstructionTypes.StArg:
-                        EmitStArg(tkn);
-                        break;
-                    case InstructionTypes.LdInd:
-                        EmitLdind(tkn);
-                        break;
-                    default:
-                        throw new NotImplementedException(tkn.Operation.ToString());
-                        break;
-                }
-            }
-
-            //TODO For exception handling, generate the catch and finally blocks as 'sub-functions'
             Lines.AddRange(Emitter.GetLines());
         }
 
-        private void EmitNewobj(Type backend, SSAToken tkn)
+        public class GraphNode<T> : IGraphNode
         {
-            var ctor = TypeMapper.ResolveMember(backend, (int)tkn.Constants[0]) as ConstructorInfo;
-            var bEnd = types[ctor.DeclaringType.FullName] as AMD64Backend;
+            public T Token;
 
-            //Request memory
-            Emitter.MovConstantToRegisterSize((ulong)bEnd.InstanceSize, AllocEvalStack(4), 4);
-            EmitCall(backend, typeof(Builtins.MemoryManager).GetMethod(nameof(Builtins.MemoryManager.AllocateMemory)), 1);
+            private int ID;
 
-            //Call constructor
-            EmitCall(backend, ctor, ctor.GetParameters().Length + 1);
-
-        }
-
-        private void EmitNewarr(Type backend, SSAToken tkn)
-        {
-            //-8 bytes is GC information
-            //-4 bytes is array length
-            //Emit a call to the rt_malloc_array alias
-            int sz = 0;
-            var tInfo = backend.Module.ResolveType((int)tkn.Constants[0]);
-            if (tInfo.IsValueType)
+            public GraphNode(int id, T tkn)
             {
-                sz = Marshal.SizeOf(tInfo);
-            }
-            else
-            {
-                sz = AMD64Backend.PointerSize;
+                Token = tkn;
+                ID = id;
             }
 
-            Emitter.MovConstantToRegisterSize((ulong)sz, AllocEvalStack(4), 4);
-            EmitCall(backend, typeof(Builtins.MemoryManager).GetMethod(nameof(Builtins.MemoryManager.AllocateArray)), 2);
-        }
-
-        private void EmitLdelema(SSAToken tkn)
-        {
-            var idx = PopEvalStack(out int idx_sz);
-            var arr = PopEvalStack(out int arr_sz);
-            //TODO Emit bounds check
-            Emitter.MovRelativeAddressMultToRegisterSize(arr, idx, AMD64Backend.PointerSize, 0, AllocEvalStack(AMD64Backend.PointerSize), AMD64Backend.PointerSize);
-        }
-
-        private void EmitLdelem(SSAToken tkn)
-        {
-            int itm_sz = 0;
-            //determine itm_sz based on instruction
-            switch ((OperandTypes)tkn.Constants[0])
+            public int GetID()
             {
-                case OperandTypes.I:
-                case OperandTypes.U:
-                case OperandTypes.I4:
-                case OperandTypes.U4:
-                case OperandTypes.R4:
-                    itm_sz = 4;
-                    break;
-                case OperandTypes.I1:
-                case OperandTypes.U1:
-                    itm_sz = 1;
-                    break;
-                case OperandTypes.I2:
-                case OperandTypes.U2:
-                    itm_sz = 2;
-                    break;
-                case OperandTypes.I8:
-                case OperandTypes.U8:
-                case OperandTypes.R8:
-                case OperandTypes.Object:
-                    itm_sz = 8;
-                    break;
+                return ID;
             }
 
-            var idx = PopEvalStack(out int idx_sz);
-            var arr = PopEvalStack(out int arr_sz);
-            //TODO Emit bounds check
-            Emitter.MovRelativeAddressMultToRegisterSize(arr, idx, AMD64Backend.PointerSize, 0, AllocEvalStack(itm_sz), itm_sz);
-        }
-
-        private void EmitLdlen(SSAToken tkn)
-        {
-            Emitter.MovRelativeAddressToRegister(PopEvalStack(out int ign0), -4, AllocEvalStack(4));
-        }
-
-        private void EmitStelem(SSAToken tkn)
-        {
-            int itm_sz = 0;
-            //determine itm_sz based on instruction
-            switch ((OperandTypes)tkn.Constants[0])
+            public override string ToString()
             {
-                case OperandTypes.I:
-                case OperandTypes.U:
-                case OperandTypes.I4:
-                case OperandTypes.U4:
-                case OperandTypes.R4:
-                    itm_sz = 4;
-                    break;
-                case OperandTypes.I1:
-                case OperandTypes.U1:
-                    itm_sz = 1;
-                    break;
-                case OperandTypes.I2:
-                case OperandTypes.U2:
-                    itm_sz = 2;
-                    break;
-                case OperandTypes.I8:
-                case OperandTypes.U8:
-                case OperandTypes.R8:
-                case OperandTypes.Object:
-                    itm_sz = 8;
-                    break;
-            }
-
-            var val = PopEvalStack(out int val_sz);
-            var idx = PopEvalStack(out int idx_sz);
-            var arr = PopEvalStack(out int arr_sz);
-            //TODO Emit bounds check
-            Emitter.MovRegisterToRegisterRelativeAddressMultSize(val, itm_sz, arr, idx, AMD64Backend.PointerSize, 0);
-        }
-
-        private void EmitStfld(Type backend, SSAToken tkn)
-        {
-            var fInfo = TypeMapper.ResolveMember(backend, (int)tkn.Constants[0]) as FieldInfo;
-
-            if (fInfo.DeclaringType.IsValueType)
-            {
-                var offset = (int)Marshal.OffsetOf(fInfo.DeclaringType, fInfo.Name);
-                Emitter.MovRegisterToRegisterRelativeAddressMultSize(PopEvalStack(out int par0), par0, PopEvalStack(out int par1), 0, 0, offset);
+                return Token.ToString();
             }
         }
 
-        private void EmitLdfld(Type backend, SSAToken tkn)
+        public void GenerateMethod(TypeDef tDef, MethodDef method)
         {
-            var fInfo = TypeMapper.ResolveMember(backend, (int)tkn.Constants[0]) as FieldInfo;
+            var mthdName = MachineSpec.GetMethodName(method);
+            Emitter.MakeGlobalFunction(mthdName);
 
-            int offset = 0;
-            int par1 = 0;
-            if (fInfo.DeclaringType.IsValueType)
+            //Setup ArgumentTopOffset
+            ArgumentTopOffset = MachineSpec.PointerSize;
+
+            //Setup LocalTopOffset
+            ArgumentTopOffset += method.LocalsSize;
+            LocalTopOffset = method.LocalsSize;
+            Locals = new List<LocalAllocs>();
+
+            //Setup StackSpillOffset
+            if (method.StackSize > 15)
+                throw new NotImplementedException();
+
+            //Convert the tokens into a more flexible form that is suited to optimization
+            var tkns = method.ByteCode.GetTokens();
+            var mainGraph = new Graph<GraphNode<OptimizationToken>>();
+            for (int i = 0; i < tkns.Length; i++)
             {
-                offset = (int)Marshal.OffsetOf(fInfo.DeclaringType, fInfo.Name);
-                par1 = (int)Marshal.SizeOf(fInfo.FieldType);
-            }
-            else
-            {
+                if (tkns[i].Operation == InstructionTypes.Nop)
+                    continue;
 
-            }
-            Emitter.MovRelativeAddressMultToRegisterSize(PopEvalStack(out int par0), 0, 0, offset, AllocEvalStack(par1), par1);
-        }
+                mainGraph.AddNode(new GraphNode<OptimizationToken>(tkns[i].ID, OptimizationTokenParser.Parse(tkns[i])));
 
-        private void EmitLdflda(Type backend, SSAToken tkn)
-        {
-            var fInfo = TypeMapper.ResolveMember(backend, (int)tkn.Constants[0]) as FieldInfo;
-            var b = TypeMapper.ResolveBackend(fInfo.DeclaringType) as AMD64Backend;
-
-            int offset = 0;
-            if (fInfo.DeclaringType.IsValueType)
-            {
-                offset = (int)Marshal.OffsetOf(fInfo.DeclaringType, fInfo.Name);
-            }
-            else
-            {
-                b.GetFieldDesc(fInfo.MetadataToken, out offset, out int sz);
-            }
-            Emitter.MovLabelRelativeConstantToRegisterSize(GetTypeName(fInfo.ReflectedType) + "_static", offset, AllocEvalStack(AMD64Backend.PointerSize), AMD64Backend.PointerSize);
-        }
-
-        private void EmitStsfld(Type backend, SSAToken tkn)
-        {
-            var fInfo = TypeMapper.ResolveMember(backend, (int)tkn.Constants[0]) as FieldInfo;
-            (types[fInfo.ReflectedType.FullName] as AMD64Backend).GetFieldDesc(fInfo.MetadataToken, out int off, out int sz);
-            Emitter.MovRegisterToLabelRelativeAddressSize(PopEvalStack(out int arg0_sz), arg0_sz, GetTypeName(fInfo.ReflectedType) + "_static", off);
-        }
-
-        private void EmitLdsfld(Type backend, SSAToken tkn)
-        {
-            var fInfo = TypeMapper.ResolveMember(backend, (int)tkn.Constants[0]) as FieldInfo;
-            (types[fInfo.ReflectedType.FullName] as AMD64Backend).GetFieldDesc(fInfo.MetadataToken, out int off, out int sz);
-            Emitter.MovLabelRelativeAddressToRegisterSize(GetTypeName(fInfo.ReflectedType) + "_static", off, AllocEvalStack(sz), sz);
-        }
-
-        private void EmitLdsflda(Type backend, SSAToken tkn)
-        {
-            var fInfo = TypeMapper.ResolveMember(backend, (int)tkn.Constants[0]) as FieldInfo;
-            (types[fInfo.ReflectedType.FullName] as AMD64Backend).GetFieldDesc(fInfo.MetadataToken, out int off, out int sz);
-            Emitter.MovLabelRelativeConstantToRegisterSize(GetTypeName(fInfo.ReflectedType) + "_static", off, AllocEvalStack(AMD64Backend.PointerSize), AMD64Backend.PointerSize);
-        }
-
-        private void EmitStind(SSAToken tkn)
-        {
-            var val = PopEvalStackFull();
-            var addr = PopEvalStackFull();
-
-            int itm_sz = 0;
-            //determine itm_sz based on instruction
-            switch ((OperandTypes)tkn.Constants[0])
-            {
-                case OperandTypes.I:
-                case OperandTypes.U:
-                case OperandTypes.I4:
-                case OperandTypes.U4:
-                case OperandTypes.R4:
-                    itm_sz = 4;
-                    break;
-                case OperandTypes.I1:
-                case OperandTypes.U1:
-                    itm_sz = 1;
-                    break;
-                case OperandTypes.I2:
-                case OperandTypes.U2:
-                    itm_sz = 2;
-                    break;
-                case OperandTypes.I8:
-                case OperandTypes.U8:
-                case OperandTypes.R8:
-                case OperandTypes.Object:
-                    itm_sz = 8;
-                    break;
+                if (tkns[i].Parameters != null)
+                    for (int j = 0; j < tkns[i].Parameters.Length; j++)
+                        mainGraph.AddDirectionalEdge(tkns[i].Parameters[j], tkns[i].ID);
             }
 
-            Emitter.MovRegisterToRegisterAddressSize(val.Position, addr.Position, itm_sz);
-        }
+            var subGraphs = mainGraph.FloodFill();
 
-        private void EmitLdind(SSAToken tkn)
-        {
-            var addr = PopEvalStackFull();
-
-            int itm_sz = 0;
-            //determine itm_sz based on instruction
-            switch ((OperandTypes)tkn.Constants[0])
+            //Get root nodes to propogate constant evaluations
+            for (int i = 0; i < subGraphs.Length; i++)
             {
-                case OperandTypes.I:
-                case OperandTypes.U:
-                case OperandTypes.I4:
-                case OperandTypes.U4:
-                case OperandTypes.R4:
-                    itm_sz = 4;
-                    break;
-                case OperandTypes.I1:
-                case OperandTypes.U1:
-                    itm_sz = 1;
-                    break;
-                case OperandTypes.I2:
-                case OperandTypes.U2:
-                    itm_sz = 2;
-                    break;
-                case OperandTypes.I8:
-                case OperandTypes.U8:
-                case OperandTypes.R8:
-                case OperandTypes.Object:
-                    itm_sz = 8;
-                    break;
+                var leaves = subGraphs[i].GetLeafNodes();
+
+                for (int j = 0; j < leaves.Length; j++)
+                    SimplifyGraph(leaves[j], subGraphs[i]);
+
+                subGraphs[i].RemoveDisconnected();
             }
 
-            Emitter.MovRelativeAddressToRegisterSize(addr.Position, 0, AllocEvalStack(itm_sz), itm_sz);
-        }
 
-        private void EmitCmp(SSAToken tkn)
-        {
-            //compare
-            var p1 = PopEvalStack(out int ign1);
-            var p0 = PopEvalStack(out int ign0);
-            Emitter.Compare(p0, p1);
-
-
-            //Emit branch skipping one instruction
-            switch (tkn.Operation)
+            //Propogate thunk registers through the graph
+            var thunkSets = new Dictionary<AssemRegisters, bool>[subGraphs.Length];
+            for (int i = 0; i < subGraphs.Length; i++)
             {
-                case InstructionTypes.Cgt:
-                    Emitter.JmpGtRelativeLocalLabel(1);
-                    break;
-                case InstructionTypes.CgtUn:
-                    Emitter.JmpGtUnRelativeLocalLabel(1);
-                    break;
-                case InstructionTypes.Clt:
-                    Emitter.JmpLtRelativeLocalLabel(1);
-                    break;
-                case InstructionTypes.CltUn:
-                    Emitter.JmpLtUnRelativeLocalLabel(1);
-                    break;
-                case InstructionTypes.Ceq:
-                    Emitter.JmpEqRelativeLocalLabel(1);
-                    break;
+                Thunks = new Dictionary<AssemRegisters, bool>();
+                var leaves = subGraphs[i].GetLeafNodes();
+
+                for (int j = 0; j < leaves.Length; j++)
+                    ThunkRegisters(leaves[j], subGraphs[i]);
+
+                thunkSets[i] = Thunks;
             }
 
-            int reg = AllocEvalStack(AMD64Backend.PointerSize);
-            Emitter.MovConstantToRegister(0, reg);
-            Emitter.JmpRelativeLocalLabel(2);
-
-            Emitter.MakeLocalLineLabel(1);
-            Emitter.MovConstantToRegister(1, reg);
-
-            Emitter.MakeLocalLineLabel(2);
-        }
-
-        private void EmitLdLoca(SSAToken tkn)
-        {
-            Emitter.LoadEffectiveAddress((int)AssemRegisters.Rsp, LocalTopOffset + (int)tkn.Constants[0] * AMD64Backend.PointerSize, AllocEvalStack(Locals[(int)tkn.Constants[0]].TypeSize, Locals[(int)tkn.Constants[0]].ValueKnown, Locals[(int)tkn.Constants[0]].Value));
-        }
-
-        private void EmitLdArg(SSAToken tkn)
-        {
-            Emitter.MovRelativeAddressToRegister((int)AssemRegisters.Rsp, ArgumentTopOffset + (int)tkn.Constants[0] * AMD64Backend.PointerSize, AllocEvalStack(AMD64Backend.PointerSize));
-        }
-
-        private void EmitConvert(SSAToken tkn)
-        {
-            if (tkn.Operation == InstructionTypes.ConvertCheckOverflow)
+            //Propogate register preferences through the graph
+            var registerSets = new Dictionary<AssemRegisters, int>[subGraphs.Length];
+            var registerInUseSets = new Dictionary<AssemRegisters, bool>[subGraphs.Length];
+            for (int i = 0; i < subGraphs.Length; i++)
             {
-                //Emit overflow check
+                Thunks = thunkSets[i];
+
+                RegisterAllocs = new Dictionary<AssemRegisters, int>();
+                RegisterAllocs[AssemRegisters.Rax] = 0;
+                RegisterAllocs[AssemRegisters.Rbx] = 0;
+                RegisterAllocs[AssemRegisters.Rcx] = 0;
+                RegisterAllocs[AssemRegisters.Rdx] = 0;
+                RegisterAllocs[AssemRegisters.Rsi] = 0;
+                RegisterAllocs[AssemRegisters.Rdi] = 0;
+                RegisterAllocs[AssemRegisters.Rbp] = 0;
+                RegisterAllocs[AssemRegisters.R8] = 0;
+                RegisterAllocs[AssemRegisters.R9] = 0;
+                RegisterAllocs[AssemRegisters.R10] = 0;
+                RegisterAllocs[AssemRegisters.R11] = 0;
+                RegisterAllocs[AssemRegisters.R12] = 0;
+                RegisterAllocs[AssemRegisters.R13] = 0;
+                RegisterAllocs[AssemRegisters.R14] = 0;
+                RegisterAllocs[AssemRegisters.R15] = 0;
+
+                RegisterInUse = new Dictionary<AssemRegisters, bool>();
+                RegisterInUse[AssemRegisters.Rax] = false;
+                RegisterInUse[AssemRegisters.Rbx] = false;
+                RegisterInUse[AssemRegisters.Rcx] = false;
+                RegisterInUse[AssemRegisters.Rdx] = false;
+                RegisterInUse[AssemRegisters.Rsi] = false;
+                RegisterInUse[AssemRegisters.Rdi] = false;
+                RegisterInUse[AssemRegisters.Rbp] = false;
+                RegisterInUse[AssemRegisters.R8] = false;
+                RegisterInUse[AssemRegisters.R9] = false;
+                RegisterInUse[AssemRegisters.R10] = false;
+                RegisterInUse[AssemRegisters.R11] = false;
+                RegisterInUse[AssemRegisters.R12] = false;
+                RegisterInUse[AssemRegisters.R13] = false;
+                RegisterInUse[AssemRegisters.R14] = false;
+                RegisterInUse[AssemRegisters.R15] = false;
+
+                var leaves = subGraphs[i].GetLeafNodes();
+
+                for (int j = 0; j < leaves.Length; j++)
+                    PropogateRegisters(leaves[j], subGraphs[i]);
+
+                registerSets[i] = RegisterAllocs;
+                registerInUseSets[i] = RegisterInUse;
             }
 
-            bool signed = false;
-            if (new OperandTypes[] { OperandTypes.I, OperandTypes.I1, OperandTypes.I2, OperandTypes.I4, OperandTypes.I8 }.Contains((OperandTypes)tkn.Constants[0]))
+            //Allocate registers, each subgraph has its own allocation set
+            for (int i = 0; i < subGraphs.Length; i++)
             {
-                signed = true;
+                RegisterAllocs = registerSets[i];
+                RegisterInUse = registerInUseSets[i];
+
+                var roots = subGraphs[i].GetLeafNodes();
+
+                for (int j = 0; j < roots.Length; j++)
+                    AllocateRegisters(roots[j], subGraphs[i]);
+
+                registerInUseSets[i] = RegisterInUse;
+                registerSets[i] = RegisterAllocs;
             }
 
-            switch ((OperandTypes)tkn.Constants[0])
+#if DEBUG
+            for (int i = 0; i < subGraphs.Length; i++)
             {
-                case OperandTypes.I:
-                case OperandTypes.U:
-                    {
-                        Emitter.MovRegisterToRegisterSignSize(PopEvalStack(out int ign0), ign0, AllocEvalStack(4), 4, signed);
-                    }
-                    break;
-                case OperandTypes.I1:
-                case OperandTypes.U1:
-                    {
-                        Emitter.MovRegisterToRegisterSignSize(PopEvalStack(out int ign0), ign0, AllocEvalStack(1), 1, signed);
-                    }
-                    break;
-                case OperandTypes.I2:
-                case OperandTypes.U2:
-                    {
-                        Emitter.MovRegisterToRegisterSignSize(PopEvalStack(out int ign0), ign0, AllocEvalStack(2), 2, signed);
-                    }
-                    break;
-                case OperandTypes.I4:
-                case OperandTypes.U4:
-                    {
-                        Emitter.MovRegisterToRegisterSignSize(PopEvalStack(out int ign0), ign0, AllocEvalStack(4), 4, signed);
-                    }
-                    break;
-                case OperandTypes.I8:
-                case OperandTypes.U8:
-                    {
-                        Emitter.MovRegisterToRegisterSignSize(PopEvalStack(out int ign0), ign0, AllocEvalStack(8), 8, signed);
-                    }
-                    break;
-                case OperandTypes.R_U:
-                case OperandTypes.R4:
-                case OperandTypes.R8:
-                    throw new NotImplementedException("Floating point support unimplemented!");
+                Console.WriteLine($"Subgraph {i}");
+                Console.WriteLine(subGraphs[i].ToString());
             }
-        }
+#endif
 
-        private void EmitLdNull(SSAToken tkn)
-        {
-            Emitter.MovConstantToRegister(0, AllocEvalStack(AMD64Backend.PointerSize, true, 0));
-        }
-
-        private void EmitDup(SSAToken tkn)
-        {
-            var r = PeekEvalStackFull();
-            //TODO: If pointer, we can't just duplicate the value?
-            Emitter.MovRegisterToRegister(r.Position, AllocEvalStack(r.TypeSize, r.ValueKnown, r.Value));
-        }
-
-        private void EmitPop(SSAToken tkn)
-        {
-            PopEvalStack(out int ign);
-        }
-
-        private void EmitMath(SSAToken tkn)
-        {
-            int ign1 = 0;
-            //TODO optimize operations for when operands are known, allowing assembler to remove dead stores
-            switch (tkn.Operation)
+            //Generate the assembly output
+            for (int i = 0; i < subGraphs.Length; i++)
             {
-                case InstructionTypes.Add:
-                    {
-                        Emitter.Add(PopEvalStack(out int ign0), PopEvalStack(out ign1));
-                    }
-                    break;
-                case InstructionTypes.UAddCheckOverflow:
-                case InstructionTypes.AddCheckOverflow:
-                    {
-                        Emitter.Add(PopEvalStack(out int ign0), PopEvalStack(out ign1));
-                        Emitter.CheckOverflow(ign1, "ovf_error");
-                    }
-                    break;
-                case InstructionTypes.Multiply:
-                    {
-                        Emitter.Multiply(PopEvalStack(out int ign0), PopEvalStack(out ign1));
-                    }
-                    break;
-                case InstructionTypes.Divide:
-                    {
-                        var p1 = PopEvalStack(out int ign0);
-                        var p0 = PopEvalStack(out ign1);
-                        Emitter.Divide(p0, p1);
-                    }
-                    break;
-                case InstructionTypes.Rem:
-                    {
-                        var p1 = PopEvalStack(out int ign0);
-                        var p0 = PopEvalStack(out ign1);
-                        Emitter.Remainder(p0, p1);
-                    }
-                    break;
-                case InstructionTypes.UDivide:
-                    {
-                        var p1 = PopEvalStack(out int ign0);
-                        var p0 = PopEvalStack(out ign1);
-                        Emitter.UDivide(p0, p1);
-                    }
-                    break;
-                case InstructionTypes.URem:
-                    {
-                        var p1 = PopEvalStack(out int ign0);
-                        var p0 = PopEvalStack(out ign1);
-                        Emitter.URemainder(p0, p1);
-                    }
-                    break;
-                case InstructionTypes.Subtract:
-                    {
-                        Emitter.Sub(PopEvalStack(out int ign0), PopEvalStack(out ign1));
-                    }
-                    break;
-                case InstructionTypes.USubtractCheckOverflow:
-                case InstructionTypes.SubtractCheckOverflow:
-                    {
-                        Emitter.Sub(PopEvalStack(out int ign0), PopEvalStack(out ign1));
-                        Emitter.CheckOverflow(ign1, "ovf_error");
-                    }
-                    break;
-                case InstructionTypes.And:
-                    {
-                        var p0 = PopEvalStack(out int ign0);
-                        var p1 = PopEvalStack(out ign1);
-                        Emitter.And(p0, p1);
-                    }
-                    break;
-                case InstructionTypes.Or:
-                    {
-                        Emitter.Or(PopEvalStack(out int ign0), PopEvalStack(out ign1));
-                    }
-                    break;
-                case InstructionTypes.Xor:
-                    {
-                        Emitter.Xor(PopEvalStack(out int ign0), PopEvalStack(out ign1));
-                    }
-                    break;
-                case InstructionTypes.Neg:
-                    {
-                        Emitter.Neg(PopEvalStack(out ign1));
-                    }
-                    break;
-                case InstructionTypes.Not:
-                    {
-                        Emitter.Not(PopEvalStack(out ign1));
-                    }
-                    break;
-                case InstructionTypes.Shl:
-                    {
-                        var p1 = PopEvalStack(out int ign0);
-                        var p0 = PopEvalStack(out ign1);
-                        Emitter.ShiftLeft(p0, p1);
-                    }
-                    break;
-                case InstructionTypes.Shr:
-                    {
-                        var p1 = PopEvalStack(out int ign0);
-                        var p0 = PopEvalStack(out ign1);
-                        Emitter.ShiftRight(p0, p1);
-                    }
-                    break;
-                case InstructionTypes.ShrUn:
-                    {
-                        var p1 = PopEvalStack(out ign1);
-                        var p0 = PopEvalStack(out int ign0);
-                        Emitter.ShiftRightUn(p0, p1);
-                    }
-                    break;
+                GenerateCode(subGraphs[i]);
             }
-            AllocEvalStack(ign1);
-        }
 
-        private void EmitLdLoc(SSAToken tkn)
-        {
-            Emitter.MovRelativeAddressToRegisterSize((int)AssemRegisters.Rsp, LocalTopOffset + (int)tkn.Constants[0] * AMD64Backend.PointerSize, AllocEvalStack(Locals[(int)tkn.Constants[0]].TypeSize, Locals[(int)tkn.Constants[0]].ValueKnown, Locals[(int)tkn.Constants[0]].Value), Locals[(int)tkn.Constants[0]].TypeSize);
-        }
-
-        private void EmitBranch(SSAToken tkn)
-        {
-            Console.WriteLine(tkn.Constants[0]);
-            if (tkn.Operation != InstructionTypes.Br)
-            {
-                if (new InstructionTypes[] { InstructionTypes.Beq, InstructionTypes.Bge, InstructionTypes.BgeUn, InstructionTypes.Bgt, InstructionTypes.BgtUn, InstructionTypes.Ble, InstructionTypes.BleUn, InstructionTypes.Blt, InstructionTypes.BltUn, InstructionTypes.BneUn }.Contains(tkn.Operation))
+            for (int i = 0; i < tkns.Length; i++)
+                switch (tkns[i].Operation)
                 {
-                    var p1 = PopEvalStack(out int ign0);
-                    var p2 = PopEvalStack(out int ign1);
-                    Emitter.Compare(p2, p1);
+                    default:
+                        throw new Exception(tkns[i].Operation.ToString());
                 }
-                else if (new InstructionTypes[] { InstructionTypes.BrFalse, InstructionTypes.BrTrue }.Contains(tkn.Operation))
-                    Emitter.TestBool(PopEvalStack(out int ign0));
-            }
-            switch (tkn.Operation)
+
+        }
+
+        private Dictionary<AssemRegisters, bool> Thunks = new Dictionary<AssemRegisters, bool>();
+        private Dictionary<AssemRegisters, int> RegisterAllocs = new Dictionary<AssemRegisters, int>();
+        private Dictionary<AssemRegisters, bool> RegisterInUse = new Dictionary<AssemRegisters, bool>();
+        public void ThunkRegisters(int root, Graph<GraphNode<OptimizationToken>> graph)
+        {
+            var node = graph.Nodes[root];
+            for (int i = 0; i < node.Incoming.Count; i++)
             {
-                case InstructionTypes.Br:
-                    Emitter.JmpRelativeLabel((int)tkn.Constants[0]);
-                    break;
-                case InstructionTypes.Beq:
-                    Emitter.JmpEqRelativeLabel((int)tkn.Constants[0]);
-                    break;
-                case InstructionTypes.BneUn:
-                    Emitter.JmpNeRelativeLabel((int)tkn.Constants[0]);
-                    break;
-                case InstructionTypes.Bge:
-                    Emitter.JmpGeRelativeLabel((int)tkn.Constants[0]);
-                    break;
-                case InstructionTypes.BgeUn:
-                    Emitter.JmpGeUnRelativeLabel((int)tkn.Constants[0]);
-                    break;
-                case InstructionTypes.Bgt:
-                    Emitter.JmpGtRelativeLabel((int)tkn.Constants[0]);
-                    break;
-                case InstructionTypes.BgtUn:
-                    Emitter.JmpGtUnRelativeLabel((int)tkn.Constants[0]);
-                    break;
-                case InstructionTypes.Ble:
-                    Emitter.JmpLeRelativeLabel((int)tkn.Constants[0]);
-                    break;
-                case InstructionTypes.BleUn:
-                    Emitter.JmpLeUnRelativeLabel((int)tkn.Constants[0]);
-                    break;
-                case InstructionTypes.Blt:
-                    Emitter.JmpLtRelativeLabel((int)tkn.Constants[0]);
-                    break;
-                case InstructionTypes.BltUn:
-                    Emitter.JmpLtUnRelativeLabel((int)tkn.Constants[0]);
-                    break;
-                case InstructionTypes.BrTrue:
-                    Emitter.JmpNZeroRelativeLabel((int)tkn.Constants[0]);
-                    break;
-                case InstructionTypes.BrFalse:
-                    Emitter.JmpZeroRelativeLabel((int)tkn.Constants[0]);
-                    break;
+                for (int j = 0; j < node.Node.Token.ThunkRegisters.Length; j++)
+                    Thunks[node.Node.Token.ThunkRegisters[j]] = false;
+
+                ThunkRegisters(node.Incoming[i], graph);
             }
         }
 
-        private void EmitStLoc(SSAToken tkn)
+        public void AllocateRegisters(int root, Graph<GraphNode<OptimizationToken>> graph)
         {
-            var r = PopEvalStackFull();
-            Emitter.MovRegisterToRegisterRelativeAddress(r.Position, (int)AssemRegisters.Rsp, LocalTopOffset + (int)tkn.Constants[0] * AMD64Backend.PointerSize);
-            Locals[(int)tkn.Constants[0]].TypeSize = r.TypeSize;
-            Locals[(int)tkn.Constants[0]].Value = r.Value;
-            Locals[(int)tkn.Constants[0]].ValueKnown = r.ValueKnown;
-        }
+            var node = graph.Nodes[root];
+            var tkn = node.Node.Token;
 
-        private void EmitStArg(SSAToken tkn)
-        {
-            var r = PopEvalStackFull();
-            Emitter.MovRegisterToRegisterRelativeAddress(r.Position, (int)AssemRegisters.Rsp, ArgumentTopOffset + (int)tkn.Constants[0] * AMD64Backend.PointerSize);
-        }
-
-        private void EmitLdc(SSAToken tkn)
-        {
-            var reg = -1;
-            switch ((OperandTypes)tkn.Constants[0])
+            for (int i = 0; i < tkn.ParameterRegisters.Length; i++)
             {
-                case OperandTypes.I4:
-                    reg = AllocEvalStack(4, true, tkn.Constants[1]);
-                    Emitter.MovConstantToRegister(tkn.Constants[1], reg);
-                    break;
-                case OperandTypes.I8:
-                    reg = AllocEvalStack(8, true, tkn.Constants[1]);
-                    Emitter.MovConstantToRegister(tkn.Constants[1], reg);
-                    break;
-                case OperandTypes.R4:
-                    reg = AllocEvalStack(4, true, tkn.Constants[1]);
-                    Emitter.MovConstantToRegister((ulong)BitConverter.ToInt32(BitConverter.GetBytes((float)tkn.Constants[1]), 0), reg);
-                    break;
-                case OperandTypes.R8:
-                    reg = AllocEvalStack(8, true, tkn.Constants[1]);
-                    Emitter.MovConstantToRegister((ulong)BitConverter.DoubleToInt64Bits((double)tkn.Constants[1]), reg);
-                    break;
-            }
-        }
+                if (tkn.Parameters[i].ParameterLocation == OptimizationParameterLocation.Index)
+                    AllocateRegisters((int)tkn.Parameters[i].Value, graph);
 
-        private void EmitCall(Type backend, SSAToken tkn)
-        {
-            var mthd = TypeMapper.ResolveMember(backend, (int)tkn.Constants[0]);
-            if (mthd.MemberType == MemberTypes.Method) EmitCall(backend, mthd as MethodInfo, tkn.Parameters.Length);
-            else EmitCall(backend, mthd as ConstructorInfo, tkn.Parameters.Length);
-        }
-
-        private void EmitCall(Type backend, MethodInfo mthd, int paramCnt)
-        {
-            if (mthd.ReflectedType.FullName == typeof(MSIL2ASM.Builtins.x86_64).FullName)
-            {
-                var builtin_type = typeof(MSIL2ASM.Builtins.x86_64);
-                //Check this method for built-in calls for which to emit other assembly
-                switch (mthd.Name)
+                if (tkn.ParameterRegisters[i].HasFlag(AssemRegisters.Any) && tkn.Parameters[i].ParameterLocation == OptimizationParameterLocation.Index)
                 {
-                    case nameof(Builtins.x86_64.Halt):
-                        Emitter.Hlt();
-                        break;
-                    case nameof(Builtins.x86_64.Cli):
-                        Emitter.Cli();
-                        break;
-                    case nameof(Builtins.x86_64.Sti):
-                        Emitter.Sti();
-                        break;
-                    case nameof(Builtins.x86_64.Out):
+                    //Allocate a register for the constant
+                    var freeRegs = RegisterAllocs.Where(a => a.Value == 0);
+
+                    if (freeRegs.Count() == 0)
+                        throw new Exception("Not enough registers available.");
+
+                    var allocReg = freeRegs.First(/*a => !RegisterInUse[a.Key]*/).Key;
+                    RegisterAllocs[allocReg] = tkn.Offset;
+
+                    graph.Nodes[root].Node.Token.ParameterRegisters[i] = allocReg;
+
+                    var res_idx = graph.Nodes[(int)tkn.Parameters[i].Value].Node.Token.GetResultIdx();
+                    graph.Nodes[(int)tkn.Parameters[i].Value].Node.Token.ResultRegisters[res_idx] = allocReg;
+                }
+
+            }
+        }
+
+        public void PropogateRegisters(int root, Graph<GraphNode<OptimizationToken>> graph)
+        {
+            var node = graph.Nodes[root];
+            var tkn = node.Node.Token;
+
+            //If the ParameterRegisters is given, is not an active thunk register and the associated incoming connection is Any, update ResultRegisters
+            //If the ParameterRegisters is given and is an active thunk register, mark the register as needing to be saved
+            for (int j = 0; j < tkn.ParameterRegisters.Length; j++)
+            {
+                bool isRegBased = true;
+                if (tkn.Parameters[j].ParameterLocation == OptimizationParameterLocation.Const && (tkn.ParameterRegisters[j] & AssemRegisters.Const) != 0)
+                {
+                    isRegBased = false;
+
+                    //Update the entry to be using the constant form
+                    if (tkn.Parameters[j].Value <= byte.MaxValue & tkn.ParameterRegisters[j].HasFlag(AssemRegisters.Const8))
+                    {
+                        tkn.ParameterRegisters[j] = AssemRegisters.Const8;
+                    }
+                    else if (tkn.Parameters[j].Value <= ushort.MaxValue & tkn.ParameterRegisters[j].HasFlag(AssemRegisters.Const16))
+                    {
+                        tkn.ParameterRegisters[j] = AssemRegisters.Const16;
+                    }
+                    else if (tkn.Parameters[j].Value <= uint.MaxValue & tkn.ParameterRegisters[j].HasFlag(AssemRegisters.Const32))
+                    {
+                        tkn.ParameterRegisters[j] = AssemRegisters.Const32;
+                    }
+                    else
+                    {
+                        tkn.ParameterRegisters[j] = AssemRegisters.Const64;
+                    }
+                }
+
+                if (isRegBased && !tkn.ParameterRegisters[j].HasFlag(AssemRegisters.Any))
+                {
+                    var reg = tkn.ParameterRegisters[j] & ~AssemRegisters.Const;
+
+                    //Propogate the result register
+                    var res = graph.Nodes[(int)tkn.Parameters[j].Value].Node.Token;
+                    if (res.ResultRegisters.Length != 0)
+                    {
+                        int resultIdx = res.GetResultIdx();
+
+                        if (res.ResultRegisters[resultIdx].HasFlag(AssemRegisters.Any))
+                            res.ResultRegisters[resultIdx] = node.Node.Token.ParameterRegisters[j];
+                        else if (res.ResultRegisters[resultIdx] != reg)
                         {
-                            var arg1 = PopEvalStackFull();
-                            var arg0 = PopEvalStackFull();
-
-                            var sz = Marshal.SizeOf(mthd.GetParameters()[1].ParameterType);
-
-                            if (arg0.ValueKnown && arg0.Value <= byte.MaxValue)
-                                Emitter.OutConst((int)arg0.Value, arg1.Position, sz);
-                            else
-                                Emitter.Out(arg0.Position, arg1.Position, 1);
+                            //We have a conflict of assignments, will need to insert a move during code generation
                         }
-                        break;
-                    case nameof(Builtins.x86_64.In):
-                        {
-                            var arg1 = PopEvalStackFull();
-                            var arg0 = PopEvalStackFull();
+                    }
 
-                            //TODO Fix this code, arg1 will end up being a pointer, thus simply emitting an 'in' instruction won't do
-                            if (arg0.ValueKnown)
-                                Emitter.InConst((int)arg0.Value, arg1.Position, arg1.TypeSize);
-                            else
-                                Emitter.In(arg0.Position, arg1.Position, arg1.TypeSize);
-                        }
-                        break;
+                    //If the ParameterRegisters is given and is a Thunk register, mark it as active
+                    if (Thunks.ContainsKey(reg))
+                    {
+                        Thunks[reg] = true;
+                        RegisterAllocs[reg] = tkn.Offset;
+                    }
                 }
-
-                return;
-            }
-
-            int saved_cnt = EvalStack.Count - paramCnt;
-            //Save currently in use registers on the stack
-            for (int i = 0; i < saved_cnt; i++)
-            {
-                Emitter.Push(EvalStack[EvalStack.Count - 1 - i].Position);
-            }
-
-            //Push arguments onto the stack in reverse order, so the called function accesses them like an array
-            for (int i = 0; i < paramCnt; i++)
-            {
-                int reg = PopEvalStack(out int ign0);
-                Emitter.Push(reg);
-            }
-
-            //The instance is pushed automatically
-
-            //Push an empty spot for the return value
-            Emitter.Push((int)AssemRegisters.Rax);
-
-            var tName = mthd.ReflectedType;
-            var mthdName = AMD64Backend.GetMethodName(TypeMapper.ReverseResolveMember(mthd.DeclaringType, mthd.MetadataToken) as MethodInfo);
-
-            if (prefix != GetTypeName(mthd.DeclaringType))
-            {
-                externals.Add(mthdName);
-            }
-
-            Emitter.CallLabel(mthdName);
-
-            //Read return value
-            int retValSz = 0;
-            if (new Type[] { typeof(uint), typeof(int), typeof(float) }.Contains(mthd.ReturnType))
-            {
-                retValSz = 4;
-            }
-            else if (new Type[] { typeof(ushort), typeof(short) }.Contains(mthd.ReturnType))
-            {
-                retValSz = 2;
-            }
-            else if (new Type[] { typeof(byte), typeof(sbyte) }.Contains(mthd.ReturnType))
-            {
-                retValSz = 1;
-            }
-            else if (mthd.ReturnType != typeof(void))
-            {
-                retValSz = 8;
-            }
-
-            if (retValSz != 0)
-            {
-                int retVal = AllocEvalStack(retValSz);
-                Emitter.Pop(retVal);
-            }
-
-            //Remove arguments from stack
-            Emitter.AddRegConst((int)AssemRegisters.Rsp, paramCnt * AMD64Backend.PointerSize + (retValSz == 0 ? AMD64Backend.PointerSize : 0));
-
-            //Reload used registers from stack
-            for (int i = 0; i < saved_cnt; i++)
-            {
-                Emitter.Pop(EvalStack[EvalStack.Count - 1 - i].Position);
-            }
-        }
-
-        private void EmitCall(Type backend, ConstructorInfo ctor, int paramCnt)
-        {
-            //Save currently in use registers on the stack
-            for (int i = 0; i < EvalStack.Count - paramCnt - 1; i++)
-            {
-                Emitter.Push(EvalStack[EvalStack.Count - 1 - i].Position);
-            }
-
-            //Push arguments onto the stack in reverse order, so the called function accesses them like an array
-            int objReg = PopEvalStack(out int objReg0);
-            for (int i = 0; i < paramCnt - 1; i++)
-            {
-                int reg = PopEvalStack(out int ign0);
-                Emitter.Push(reg);
-            }
-            Emitter.Push(objReg);
-
-            //The instance is pushed automatically
-
-            //Push an empty spot for the return value
-            Emitter.Push((int)AssemRegisters.Rax);
-
-            var tName = ctor.ReflectedType;
-            var mthdName = AMD64Backend.GetMethodName(ctor);
-
-            if (prefix != GetTypeName(ctor.DeclaringType))
-            {
-                externals.Add(mthdName);
-            }
-
-            Emitter.CallLabel(mthdName);
-
-            //Remove arguments from stack
-            int retVal = AllocEvalStack(AMD64Backend.PointerSize);
-            Emitter.Pop(retVal);
-
-            Emitter.SubRegConst((int)AssemRegisters.Rsp, paramCnt * AMD64Backend.PointerSize);
-
-            //Reload used registers from stack
-            for (int i = 0; i < EvalStack.Count - paramCnt - 1; i++)
-            {
-                Emitter.Pop(EvalStack[EvalStack.Count - 1 - i].Position);
-            }
-        }
-
-        private void EmitLdStr(SSAToken tkn, string[] strtab)
-        {
-            //Declare string variable with the given value
-            var str = strtab[tkn.Constants[0] - 1];
-            int id = 0;
-            if (!stringTable.Contains(str))
-            {
-                stringTable.Add(str);
-                id = stringTable.Count - 1;
-                AddString(str, id);
-            }
-            else
-            {
-                id = stringTable.IndexOf(str);
-            }
-
-            var str_lbl = GetStringLabel(id);
-            var reg_idx = AllocEvalStack(8);
-
-            //Mov the address of the label into the register
-            Emitter.MovLabelAddressToRegister(reg_idx, str_lbl);
-        }
-
-        public void EmitRet(bool isCtor, SSAToken tkn)
-        {
-            //Move rsp back to previous location
-            if (ArgumentTopOffset != -16)
-                Emitter.SubRegConst((int)AssemRegisters.Rsp, (ArgumentTopOffset - 8));
-
-            //Write to (rsp - 8) the return value register
-            if (StackSize == 1 | isCtor)
-            {
-                int retValReg = 0;
-                if (isCtor)
+                else if (isRegBased && tkn.ParameterRegisters[j].HasFlag(AssemRegisters.Any))
                 {
-                    var arg0_reg = AllocEvalStack(AMD64Backend.PointerSize);
-                    Emitter.MovRelativeAddressToRegisterSize((int)AssemRegisters.Rsp, ArgumentTopOffset, arg0_reg, AMD64Backend.PointerSize);
-                }
-                retValReg = PopEvalStack(out int ign0);
+                    if (tkn.Parameters[j].ParameterLocation != OptimizationParameterLocation.Const)
+                    {
+                        //Propogate the register from Result into the Parameter
+                        var res = graph.Nodes[(int)tkn.Parameters[j].Value].Node.Token;
+                        if (res.ResultRegisters.Length == 0)
+                            throw new Exception("Expected more than 0 results from previous token.");
 
-                Emitter.MovRegisterToRegisterRelativeAddress(retValReg, (int)AssemRegisters.Rsp, +8);
+                        tkn.ParameterRegisters[j] = res.ResultRegisters[res.GetResultIdx()];
+                    }
+                    else
+                    {
+                        //Allocate a register for the constant
+                        var freeRegs = RegisterAllocs.Where(a => a.Value == 0);
+
+                        if (freeRegs.Count() == 0)
+                            throw new Exception("Not enough registers available.");
+
+                        var allocReg = freeRegs.First().Key;
+                        RegisterAllocs[allocReg] = tkn.Offset;
+                        tkn.ParameterRegisters[j] = allocReg;
+                    }
+                }
+
+                if (tkn.Parameters[j].ParameterLocation == OptimizationParameterLocation.Index)
+                    PropogateRegisters((int)tkn.Parameters[j].Value, graph);
             }
 
-            Emitter.Ret();
+            //If the incoming connection is given, is not an active thunk register and the ParameterRegisters is Any, update ParameterRegisters
+            //If the ResultRegisters is given and is a Thunk register, mark it as active
+
+
+            //PropogateRegisters(node.Incoming[i], graph);
+
         }
 
-        /*
-        public void EmitNewobj(AMD64Backend backend, SSAToken tkn)
+        public void SimplifyGraph(int root, Graph<GraphNode<OptimizationToken>> graph)
         {
-            var ctor = backend.GetCtorInfo((int)tkn.Constants[0]);
-
-            //allocate object
-            int sz = 0;
-            if (types.ContainsKey(ctor.ReflectedType.FullName))
-                sz = types[ctor.ReflectedType.FullName].InstanceSize;
-            else
-                sz = Marshal.SizeOf(ctor.ReflectedType);
-
-            if (ctor.ReflectedType.IsValueType)
+            var node = graph.Nodes[root];
+            for (int i = 0; i < node.Incoming.Count; i++)
             {
-                //NasmEmitDecl(GetTypeRefName(ctor.ReflectedType), sz, tkn.ID);
+                SimplifyGraph(node.Incoming[i], graph);
+                var paramNode = graph.Nodes[node.Incoming[i]];
+
+                var results = paramNode.Node.Token.Results;
+                if (results.Length == 0) continue;
+
+                int result_idx = paramNode.Node.Token.GetResultIdx();
+
+                if (results != null && results[result_idx].ParameterLocation == OptimizationParameterLocation.Const && results[result_idx].ParameterType == OptimizationParameterType.Integer)
+                {
+                    graph.RemoveDirectionalEdge(node.Incoming[i], root);
+                    graph.Nodes[root].Node.Token.Parameters[i].ParameterLocation = OptimizationParameterLocation.Const;
+                    graph.Nodes[root].Node.Token.Parameters[i].ParameterType = results[result_idx].ParameterType;
+                    graph.Nodes[root].Node.Token.Parameters[i].Size = results[result_idx].Size;
+                    graph.Nodes[root].Node.Token.Parameters[i].Value = results[result_idx].Value;
+
+                    i--;
+                }
             }
-            else
-            {
-                //NasmEmitDecl(GetTypeRefName(ctor.ReflectedType), AMD64Backend.PointerSize, tkn.ID);
-
-                //initialize the object
-                //NasmEmitObjAlloc(GetTypeRefName(ctor.ReflectedType), sz, tkn.ID);
-            }
-
-            //call the constructor for the object
-            List<int> ps = new List<int>();
-            ps.Add(tkn.ID);
-            ps.AddRange(tkn.Parameters);
-
-            //CEmitCall((types[ctor.ReflectedType.FullName] as AMD64Backend).GetMethodName((int)tkn.Constants[0]), tkn.ID, false, ps.ToArray());
-        }*/
+        }
     }
 }

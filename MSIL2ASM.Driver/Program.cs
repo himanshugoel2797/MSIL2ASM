@@ -11,9 +11,6 @@ namespace MSIL2ASM.Driver
 {
     class Program
     {
-        int a { get; set; }
-        static int c;
-
         static void Main(string[] args)
         {
             Environment.CurrentDirectory = Path.GetDirectoryName(Path.GetFullPath(args[0]));
@@ -21,7 +18,7 @@ namespace MSIL2ASM.Driver
 
             var assem = Assembly.ReflectionOnlyLoadFrom(Path.GetFullPath(args[0]));
 
-            AssemblyParser p = new AssemblyParser(new AMD64BackendProvider());
+            AssemblyParser p = new AssemblyParser();
             p.Load(assem, args[1]);
         }
 
@@ -59,64 +56,6 @@ namespace MSIL2ASM.Driver
                     // throw new InvalidOperationException(ex);
                 }
             }
-        }
-
-        public static int Test(float a, ref int f)
-        {
-            float[] a0 = new float[10];
-            float c0 = a;
-
-            unsafe
-            {
-                fixed (float* f0 = a0)
-                    for (int i = 0; i < 50; i++)
-                    {
-                        if (c0 > 0)
-                        {
-                            c0 /= int.Parse("5") & 1;
-                        }
-                        else
-                        {
-                            c0 -= 5;
-                        }
-                        f0[i] = c0;
-                    }
-            }
-
-            a0[0] = c0;
-
-            switch ((int)c0)
-            {
-                case 0:
-
-                    break;
-                case 1:
-
-                    break;
-                case 2:
-
-                    break;
-                default:
-
-                    break;
-            }
-
-            f = (int)(c0 * 4);
-            return 5;
-        }
-
-        public void T(int x)
-        {
-            Console.Write(a);
-        }
-
-        public static void Test2(float a, float b)
-        {
-            int y = 0;
-            int x = Test(a, ref y);
-            c = 1;
-            Program p = new Program();
-            Console.Write(x); p.T(y);
         }
     }
 }

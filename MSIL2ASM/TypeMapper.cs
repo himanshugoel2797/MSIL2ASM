@@ -11,7 +11,6 @@ namespace MSIL2ASM
     {
         private static Dictionary<Type, Type> Mappings;
         private static Dictionary<Type, Type> RMappings;
-        private static Dictionary<string, IAssemblyBackend> backends;
 
         public static void SetTypeMappings(Dictionary<Type, Type> mappings)
         {
@@ -111,29 +110,6 @@ namespace MSIL2ASM
             if (Mappings.ContainsKey(t))
                 return Mappings[t];
             return t;
-        }
-
-        public static IAssemblyBackend ResolveBackend(string name)
-        {
-            if (backends.ContainsKey(name))
-                return backends[name];
-            return null;
-        }
-
-        public static IAssemblyBackend ResolveBackend(Type name)
-        {
-            if (backends.ContainsKey(name.FullName))
-                return backends[name.FullName];
-
-            if (RMappings.ContainsKey(name))
-                return backends[RMappings[name].FullName];
-
-            return null;
-        }
-
-        internal static void SetBackends(Dictionary<string, IAssemblyBackend> bs)
-        {
-            backends = bs;
         }
     }
 }
