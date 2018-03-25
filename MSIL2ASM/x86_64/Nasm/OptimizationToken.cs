@@ -55,6 +55,8 @@ namespace MSIL2ASM.x86_64.Nasm
         String = 16384,
         Token = 32768,
         Function = 65536,
+        Object = 33554432,
+        VirtFunction = 67108864,
 
         CheckOverflow = 131072,
         Unsigned = 262144,

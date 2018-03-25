@@ -15,11 +15,6 @@ namespace MSIL2ASM
         {
             var str = "mthd_" + (info.IsStatic ? "s_" : "") + GetTypeName(info.ParentType) + "_" + info.Name + "_";
 
-            if (info.IsStatic && info.IsConstructor)
-                str = "cctor_" + GetTypeName(info.ParentType) + "_";
-            else if (info.IsConstructor)
-                str = "ctor_" + GetTypeName(info.ParentType) + "_";
-
             var ps = info.Parameters;
             for (int i = 0; i < ps.Length; i++)
             {
@@ -32,12 +27,7 @@ namespace MSIL2ASM
         public static string GetMethodName(MethodInfo info)
         {
             var str = "mthd_" + (info.IsStatic ? "s_" : "") + GetTypeName(info.ReflectedType) + "_" + info.Name + "_";
-
-            if (info.IsStatic && info.IsConstructor)
-                str = "cctor_" + GetTypeName(info.ReflectedType) + "_";
-            else if (info.IsConstructor)
-                str = "ctor_" + GetTypeName(info.ReflectedType) + "_";
-
+            
             var ps = info.GetParameters();
             for (int i = 0; i < ps.Length; i++)
             {

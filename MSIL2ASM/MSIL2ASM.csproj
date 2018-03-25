@@ -52,6 +52,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="ReflectionParser.cs" />
     <Compile Include="SSAFormByteCode.cs" />
+    <Compile Include="SSAInstructions.cs" />
     <Compile Include="StackQueue.cs" />
     <Compile Include="TypeMapper.cs" />
     <Compile Include="x86_64\Nasm\Assembly\InstrEmitter.cs" />

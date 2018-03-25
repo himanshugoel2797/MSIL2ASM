@@ -13,7 +13,7 @@ namespace MSIL2ASM.TestOS
         */
 
         [Alias("_CSEntryPoint")]
-        public static void Main(long magic)
+        public static void Main(long magic, params int[] r)
         {
             /*
             Builtins.x86_64.Out(0x3f8 + 1, 0x00);    // Disable all interrupts

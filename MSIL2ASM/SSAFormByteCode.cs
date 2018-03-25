@@ -37,105 +37,6 @@ namespace MSIL2ASM
         }
     }
 
-    public enum InstructionTypes
-    {
-        LdArg,  //Load argument
-        StLoc,  //Store local
-        LdLoc,  //Load local
-        Ldc,    //Load constant
-        Convert,    //Convert integer
-        ConvertCheckOverflow,   //Convert integer, checking for overflow
-        Multiply,
-        Divide,
-        UDivide,
-        Add,
-        UAddCheckOverflow,
-        AddCheckOverflow,
-        Subtract,
-        USubtractCheckOverflow,
-        SubtractCheckOverflow,
-        Rem,
-        URem,
-        And,
-        Or,
-        Xor,
-        Shl,
-        Shr,
-        ShrUn,
-        Neg,
-        Not,
-        BrFalse,    //Branch if zero
-        BrTrue,     //Branch if not zero
-        Br,         //Unconditional branch
-        Beq,
-        BneUn,
-        Bgt,
-        BgtUn,
-        Blt,
-        BltUn,
-        BleUn,
-        BgeUn,
-        Ble,
-        Bge,
-        Ret,        //Return from function
-        LdStr,
-        LdNull,
-        Call,
-        CallVirt,
-        LdLoca,
-        Newobj,
-        Newarr,
-        Stsfld,
-        Stfld,
-        Ldfld,
-        Ldsfld,
-        Ldsflda,
-        Ldflda,
-        Ceq,
-        Cgt,
-        CgtUn,
-        Clt,
-        CltUn,
-        CkFinite,
-        Pop,
-        Ldelema,
-        Ldelem,
-        Ldlen,
-        Stelem,
-        Stind,
-        Nop,
-        Dup,
-        Throw,
-        Switch,
-        Ldtoken,
-        Leave,
-        CallVirtConstrained,
-        EndFinally,
-        StArg,
-        LdInd,
-        LdArga,
-        Calli,
-        Ldftn,
-    }
-
-    public enum OperandTypes
-    {
-        I,
-        U,
-        I1,
-        I2,
-        I4,
-        I8,
-        U1,
-        U2,
-        U4,
-        U8,
-        R4,
-        R8,
-        R_U,
-        Object,
-    }
-
     public class SSAFormByteCode
     {
         private MethodBody body;
@@ -480,8 +381,7 @@ namespace MSIL2ASM
 
             if (call == InstructionTypes.CallVirtConstrained)
             {
-                tkn.Constants = new ulong[] { instructions.GetParameter(0), ConstrainedCallVirt
-    };
+                tkn.Constants = new ulong[] { instructions.GetParameter(0), ConstrainedCallVirt };
                 ConstrainedCallVirt = 0;
             }
             else
@@ -913,6 +813,72 @@ namespace MSIL2ASM
             oStack.Push(tkn.ID);
         }
 
+        private void CpBlkOpCode(ILStream instructions, OpCode opc, InstructionTypes types)
+        {
+            var tkn = new SSAToken()
+            {
+                Operation = types,
+                Parameters = new int[] { oStack.Pop(), oStack.Pop(), oStack.Pop() },
+                InstructionOffset = instructions.CurrentOffset,
+            };
+        }
+
+        private void EndFilterOpCode(ILStream instructions, OpCode opc, InstructionTypes types)
+        {
+            var tkn = new SSAToken()
+            {
+                Operation = types,
+                Parameters = new int[] { oStack.Pop() },
+                InstructionOffset = instructions.CurrentOffset,
+            };
+        }
+
+        private void InitBlkOpCode(ILStream instructions, OpCode opc, InstructionTypes types)
+        {
+            var tkn = new SSAToken()
+            {
+                Operation = types,
+                Parameters = new int[] { oStack.Pop(), oStack.Pop(), oStack.Pop() },
+                InstructionOffset = instructions.CurrentOffset,
+            };
+        }
+
+        private void JmpOpCode(ILStream instructions, OpCode opc, InstructionTypes types)
+        {
+            var tkn = new SSAToken()
+            {
+                Operation = types,
+                Parameters = null,
+                InstructionOffset = instructions.CurrentOffset,
+                Constants = new ulong[] { instructions.GetParameter(0) },
+            };
+        }
+
+        private void LocallocOpCode(ILStream instructions, OpCode opc, InstructionTypes types)
+        {
+            var tkn = new SSAToken()
+            {
+                Operation = types,
+                Parameters = new int[] { oStack.Pop() },
+                InstructionOffset = instructions.CurrentOffset,
+            };
+            oStack.Push(tkn.ID);
+        }
+
+        private void LdFtnOpCode(ILStream instructions, OpCode opc, InstructionTypes types)
+        {
+            var mbase = module.ResolveMethod((int)instructions.GetParameter(0));
+
+            var tkn = new SSAToken()
+            {
+                Operation = types,
+                Parameters = null,
+                InstructionOffset = instructions.CurrentOffset,
+                String = (mbase is MethodInfo) ? MachineSpec.GetMethodName((MethodInfo)mbase) : MachineSpec.GetMethodName((ConstructorInfo)mbase),
+            };
+            oStack.Push(tkn.ID);
+        }
+
         public void Initialize()
         {
             //Parse the code and generate the SSA form instruction stream
@@ -957,6 +923,14 @@ namespace MSIL2ASM
                 else if (opc == OpCodes.Mul)
                 {
                     DualParamMathOpCode(instructions, opc, InstructionTypes.Multiply);
+                }
+                else if (opc == OpCodes.Mul_Ovf)
+                {
+                    DualParamMathOpCode(instructions, opc, InstructionTypes.MultiplyCheckOverflow);
+                }
+                else if (opc == OpCodes.Mul_Ovf_Un)
+                {
+                    DualParamMathOpCode(instructions, opc, InstructionTypes.UMultiplyCheckOverflow);
                 }
                 else if (opc == OpCodes.Div)
                 {
@@ -1221,6 +1195,30 @@ namespace MSIL2ASM
                 else if (new OpCode[] { OpCodes.Ldloca, OpCodes.Ldloca_S }.Contains(opc))
                 {
                     LdLocaOpCode(instructions, opc, InstructionTypes.LdLoca);
+                }
+                else if (opc == OpCodes.Cpblk)
+                {
+                    CpBlkOpCode(instructions, opc, InstructionTypes.CpBlk);
+                }
+                else if (opc == OpCodes.Endfilter)
+                {
+                    EndFilterOpCode(instructions, opc, InstructionTypes.EndFilter);
+                }
+                else if (opc == OpCodes.Initblk)
+                {
+                    InitBlkOpCode(instructions, opc, InstructionTypes.InitBlk);
+                }
+                else if (opc == OpCodes.Jmp)
+                {
+                    JmpOpCode(instructions, opc, InstructionTypes.Jmp);
+                }
+                else if (opc == OpCodes.Localloc)
+                {
+                    LocallocOpCode(instructions, opc, InstructionTypes.Localloc);
+                }
+                else if (opc == OpCodes.Ldftn)
+                {
+                    LdFtnOpCode(instructions, opc, InstructionTypes.Ldftn);
                 }
                 else if (opc == OpCodes.Constrained)
                 {

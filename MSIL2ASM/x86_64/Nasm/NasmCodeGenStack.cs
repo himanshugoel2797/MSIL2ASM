@@ -476,6 +476,9 @@ namespace MSIL2ASM.x86_64.Nasm
                     throw new NotImplementedException();
             }
 
+            if (check_ovf)
+                throw new NotImplementedException();
+
             if (tkn.Parameters[0].ParameterLocation == OptimizationParameterLocation.Const)
             {
                 Emitter.MovConstantToRegisterSize(tkn.Parameters[0].Value, tkn.ResultRegisters[0], tkn.Results[0].Size);

@@ -216,14 +216,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
         {
             LinesAdd(";" + ln);
         }
-
-        #region Sub
-        public void SubRegConst(AssemRegisters reg, int constV)
-        {
-            LinesAdd($"sub {RegisterName(reg)}, {constV.ToString()}");
-        }
-        #endregion
-
+        
         #region Mov
         public void MovLabelAddressToRegister(AssemRegisters reg, string label)
         {
@@ -427,6 +420,11 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
         {
             LinesAdd($"sub {RegisterName(dst)}, {src}");
             MovRegisterToRegister(dst, dst0);
+        }
+
+        public void SubRegConst(AssemRegisters reg, int constV)
+        {
+            LinesAdd($"sub {RegisterName(reg)}, {constV.ToString()}");
         }
 
         public void Sub(AssemRegisters src, AssemRegisters dst, AssemRegisters dst0)

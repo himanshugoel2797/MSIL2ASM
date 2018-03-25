@@ -13,7 +13,7 @@ namespace MSIL2ASM
         private static int StaticOffset = 0;
         private static int InstanceOffset = 0;
 
-        private static ParameterDef[] ParseParams(ParameterInfo[] ps, bool isInst, bool isConstructor, string parentName)
+        private static ParameterDef[] ParseParams(ParameterInfo[] ps, ParameterInfo ret, bool isInst, bool isConstructor, string parentName)
         {
             List<ParameterDef> defs = new List<ParameterDef>();
 
@@ -48,6 +48,16 @@ namespace MSIL2ASM
                     //TODO handle ParameterType
                 });
             }
+
+            if (ret != null)
+                defs.Add(new ParameterDef()
+                {
+                    IsIn = ret.IsIn,
+                    IsOut = ret.IsOut,
+                    IsRetVal = true,
+                    Name = MachineSpec.GetTypeName(ret.ParameterType),
+                    //TODO handle ParameterType
+                });
 
             return defs.ToArray();
         }
@@ -91,7 +101,18 @@ namespace MSIL2ASM
                 IsStatic = fakeInst.IsStatic,
                 IsInternalCall = realInst.MethodImplementationFlags == MethodImplAttributes.InternalCall,
                 IsIL = realInst.MethodImplementationFlags == MethodImplAttributes.IL,
-                Parameters = ParseParams(fakeInst.GetParameters(), !fakeInst.IsStatic, false, MachineSpec.GetTypeName(tDef)),
+                Parameters = ParseParams(fakeInst.GetParameters(), realInst.ReturnParameter, !fakeInst.IsStatic, false, MachineSpec.GetTypeName(tDef)).OrderBy(a =>
+                {
+                    if (a.IsIn)
+                        return 1;
+                    if (a.IsOut)
+                        return 2;
+
+                    if (a.IsRetVal)
+                        return 3;
+
+                    return 0;
+                }).ToArray(),
                 ParentType = tDef,
 
                 MetadataToken = fakeInst.MetadataToken,
@@ -131,7 +152,18 @@ namespace MSIL2ASM
                 IsStatic = fakeInst.IsStatic,
                 IsInternalCall = realInst.MethodImplementationFlags == MethodImplAttributes.InternalCall,
                 IsIL = realInst.MethodImplementationFlags == MethodImplAttributes.IL,
-                Parameters = ParseParams(fakeInst.GetParameters(), true, true, MachineSpec.GetTypeName(tDef)),
+                Parameters = ParseParams(fakeInst.GetParameters(), null, true, true, MachineSpec.GetTypeName(tDef)).OrderBy(a =>
+                {
+                    if (a.IsIn)
+                        return 1;
+                    if (a.IsOut)
+                        return 2;
+
+                    if (a.IsRetVal)
+                        return 3;
+
+                    return 0;
+                }).ToArray(),
                 ParentType = tDef,
 
                 MetadataToken = fakeInst.MetadataToken,
@@ -204,7 +236,6 @@ namespace MSIL2ASM
 
             mthdList.Clear();
             fieldList.Clear();
-
 
             var staticMembers = realType.GetMembers(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
             for (int i = 0; i < staticMembers.Length; i++)
