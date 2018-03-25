@@ -61,14 +61,21 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
                     case AssemRegisters.Rdi:
                         return "rdi";
                     case AssemRegisters.R8:
+                        return "r8";
                     case AssemRegisters.R9:
+                        return "r9";
                     case AssemRegisters.R10:
+                        return "r10";
                     case AssemRegisters.R11:
+                        return "r11";
                     case AssemRegisters.R12:
+                        return "r12";
                     case AssemRegisters.R13:
+                        return "r13";
                     case AssemRegisters.R14:
+                        return "r14";
                     case AssemRegisters.R15:
-                        return "r" + idx.ToString();
+                        return "r15";
                     default:
                         throw new Exception("Unexpected register index");
                 }
@@ -92,14 +99,21 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
                     case AssemRegisters.Rdi:
                         return "edi";
                     case AssemRegisters.R8:
+                        return "r8d";
                     case AssemRegisters.R9:
+                        return "r9d";
                     case AssemRegisters.R10:
+                        return "r10d";
                     case AssemRegisters.R11:
+                        return "r11d";
                     case AssemRegisters.R12:
+                        return "r12d";
                     case AssemRegisters.R13:
+                        return "r13d";
                     case AssemRegisters.R14:
+                        return "r14d";
                     case AssemRegisters.R15:
-                        return "r" + idx.ToString() + "d";
+                        return "r15d";
                     default:
                         throw new Exception("Unexpected register index");
                 }
@@ -123,14 +137,21 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
                     case AssemRegisters.Rdi:
                         return "di";
                     case AssemRegisters.R8:
+                        return "r8w";
                     case AssemRegisters.R9:
+                        return "r9w";
                     case AssemRegisters.R10:
+                        return "r10w";
                     case AssemRegisters.R11:
+                        return "r11w";
                     case AssemRegisters.R12:
+                        return "r12w";
                     case AssemRegisters.R13:
+                        return "r13w";
                     case AssemRegisters.R14:
+                        return "r14w";
                     case AssemRegisters.R15:
-                        return "r" + idx.ToString() + "w";
+                        return "r15w";
                     default:
                         throw new Exception("Unexpected register index");
                 }
@@ -154,18 +175,26 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
                     case AssemRegisters.Rdi:
                         return "dil";
                     case AssemRegisters.R8:
+                        return "r8b";
                     case AssemRegisters.R9:
+                        return "r9b";
                     case AssemRegisters.R10:
+                        return "r10b";
                     case AssemRegisters.R11:
+                        return "r11b";
                     case AssemRegisters.R12:
+                        return "r12b";
                     case AssemRegisters.R13:
+                        return "r13b";
                     case AssemRegisters.R14:
+                        return "r14b";
                     case AssemRegisters.R15:
-                        return "r" + idx.ToString() + "b";
+                        return "r15b";
                     default:
                         throw new Exception("Unexpected register index");
                 }
-            return null;
+            else
+                throw new Exception();
         }
 
         private static string RegisterName(AssemRegisters idx)
@@ -329,6 +358,11 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
             LinesAdd($"mov [{RegisterName(dstReg)}], {RegisterName(srcReg, size)}");
         }
 
+        public void MovRegisterToAddressSize(AssemRegisters srcReg, ulong dstReg, int size)
+        {
+            LinesAdd($"mov [{dstReg:X}], {RegisterName(srcReg, size)}");
+        }
+
         #endregion
 
         #region Labels
@@ -389,9 +423,21 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
             MovRegisterToRegister(dst, dst0);
         }
 
+        public void SubConst(ulong src, AssemRegisters dst, AssemRegisters dst0)
+        {
+            LinesAdd($"sub {RegisterName(dst)}, {src}");
+            MovRegisterToRegister(dst, dst0);
+        }
+
         public void Sub(AssemRegisters src, AssemRegisters dst, AssemRegisters dst0)
         {
             LinesAdd($"sub {RegisterName(dst)}, {RegisterName(src)}");
+            MovRegisterToRegister(dst, dst0);
+        }
+
+        public void MultiplyConst(ulong src, AssemRegisters dst, AssemRegisters dst0)
+        {
+            LinesAdd($"imul {RegisterName(dst)}, {src}");
             MovRegisterToRegister(dst, dst0);
         }
 
@@ -401,9 +447,21 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
             MovRegisterToRegister(dst, dst0);
         }
 
+        public void AndConst(ulong src, AssemRegisters dst, AssemRegisters dst0)
+        {
+            LinesAdd($"and {RegisterName(dst)}, {src}");
+            MovRegisterToRegister(dst, dst0);
+        }
+
         public void And(AssemRegisters src, AssemRegisters dst, AssemRegisters dst0)
         {
             LinesAdd($"and {RegisterName(dst)}, {RegisterName(src)}");
+            MovRegisterToRegister(dst, dst0);
+        }
+
+        public void OrConst(ulong src, AssemRegisters dst, AssemRegisters dst0)
+        {
+            LinesAdd($"or {RegisterName(dst)}, {src}");
             MovRegisterToRegister(dst, dst0);
         }
 
@@ -438,22 +496,37 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
         }
 
         #region Shift
-        public void ShiftLeft(AssemRegisters reg, AssemRegisters amt_reg)
+        public void ShiftLeft(AssemRegisters reg, AssemRegisters amt_reg, AssemRegisters dst_reg)
         {
-            ShiftGeneric(reg, amt_reg, false, true);
+            ShiftGeneric(reg, amt_reg, dst_reg, false, true);
         }
 
-        public void ShiftRight(AssemRegisters reg, AssemRegisters amt_reg)
+        public void ShiftRight(AssemRegisters reg, AssemRegisters amt_reg, AssemRegisters dst_reg)
         {
-            ShiftGeneric(reg, amt_reg, true, true);
+            ShiftGeneric(reg, amt_reg, dst_reg, true, true);
         }
 
-        public void ShiftRightUn(AssemRegisters reg, AssemRegisters amt_reg)
+        public void ShiftRightUn(AssemRegisters reg, AssemRegisters amt_reg, AssemRegisters dst_reg)
         {
-            ShiftGeneric(reg, amt_reg, true, false);
+            ShiftGeneric(reg, amt_reg, dst_reg, true, false);
         }
 
-        private void ShiftGeneric(AssemRegisters reg, AssemRegisters amt_reg, bool right, bool signed)
+        public void ShiftLeft(AssemRegisters reg, int amt_reg, AssemRegisters dst_reg)
+        {
+            ShiftGeneric(reg, amt_reg, dst_reg, false, true);
+        }
+
+        public void ShiftRight(AssemRegisters reg, int amt_reg, AssemRegisters dst_reg)
+        {
+            ShiftGeneric(reg, amt_reg, dst_reg, true, true);
+        }
+
+        public void ShiftRightUn(AssemRegisters reg, int amt_reg, AssemRegisters dst_reg)
+        {
+            ShiftGeneric(reg, amt_reg, dst_reg, true, false);
+        }
+
+        private void ShiftGeneric(AssemRegisters reg, AssemRegisters amt_reg, AssemRegisters dst_reg, bool right, bool signed)
         {
             if (amt_reg != AssemRegisters.Rcx)
             {
@@ -483,6 +556,27 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
             {
                 Pop(AssemRegisters.Rcx);
             }
+        }
+
+        private void ShiftGeneric(AssemRegisters reg, int amt_reg, AssemRegisters dst_reg, bool right, bool signed)
+        {
+            string inst = "";
+            if (signed)
+            {
+                if (right)
+                    inst = "sar";
+                else
+                    inst = "sal";
+            }
+            else
+            {
+                if (right)
+                    inst = "shr";
+                else
+                    inst = "shl";
+            }
+
+            LinesAdd($"{inst} {RegisterName(reg)}, {amt_reg}");
         }
         #endregion
 
@@ -692,87 +786,87 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
         #region Conditional Jump
         public void JmpEqRelativeLabel(int line)
         {
-            LinesAdd($"je .addr_{line}");
+            LinesAdd($"je .addr_{line:X}");
         }
 
         public void JmpNeRelativeLabel(int line)
         {
-            LinesAdd($"jne .addr_{line}");
+            LinesAdd($"jne .addr_{line:X}");
         }
 
         public void JmpLtRelativeLabel(int line)
         {
-            LinesAdd($"jl .addr_{line}");
+            LinesAdd($"jl .addr_{line:X}");
         }
 
         public void JmpGtRelativeLabel(int line)
         {
-            LinesAdd($"jg .addr_{line}");
+            LinesAdd($"jg .addr_{line:X}");
         }
 
         public void JmpLeRelativeLabel(int line)
         {
-            LinesAdd($"jle .addr_{line}");
+            LinesAdd($"jle .addr_{line:X}");
         }
 
         public void JmpGeRelativeLabel(int line)
         {
-            LinesAdd($"jge .addr_{line}");
+            LinesAdd($"jge .addr_{line:X}");
         }
 
         public void JmpLtUnRelativeLabel(int line)
         {
-            LinesAdd($"jb .addr_{line}");
+            LinesAdd($"jb .addr_{line:X}");
         }
 
         public void JmpGtUnRelativeLabel(int line)
         {
-            LinesAdd($"ja .addr_{line}");
+            LinesAdd($"ja .addr_{line:X}");
         }
 
         public void JmpLeUnRelativeLabel(int line)
         {
-            LinesAdd($"jbe .addr_{line}");
+            LinesAdd($"jbe .addr_{line:X}");
         }
 
         public void JmpZeroRelativeLabel(int line)
         {
-            LinesAdd($"jz .addr_{line}");
+            LinesAdd($"jz .addr_{line:X}");
         }
 
         public void JmpNZeroRelativeLabel(int line)
         {
-            LinesAdd($"jnz .addr_{line}");
+            LinesAdd($"jnz .addr_{line:X}");
         }
 
         public void JmpGeUnRelativeLabel(int line)
         {
-            LinesAdd($"jae .addr_{line}");
+            LinesAdd($"jae .addr_{line:X}");
         }
 
         public void JmpEqRelativeLocalLabel(int idx)
         {
-            LinesAdd($"je .addr_{CurLine}_{idx}");
+            LinesAdd($"je .addr_{CurLine:X}_{idx}");
         }
 
         public void JmpLtRelativeLocalLabel(int idx)
         {
-            LinesAdd($"jl .addr_{CurLine}_{idx}");
+            LinesAdd($"jl .addr_{CurLine:X}_{idx}");
         }
 
         public void JmpGtRelativeLocalLabel(int idx)
         {
-            LinesAdd($"jg .addr_{CurLine}_{idx}");
+            LinesAdd($"jg .addr_{CurLine:X}_{idx}");
         }
 
         public void JmpLtUnRelativeLocalLabel(int idx)
         {
-            LinesAdd($"jb .addr_{CurLine}_{idx}");
+            LinesAdd($"jb .addr_{CurLine:X}_{idx}");
         }
 
         public void JmpGtUnRelativeLocalLabel(int idx)
         {
-            LinesAdd($"ja .addr_{CurLine}_{idx}");
+            LinesAdd($"ja .addr_{CurLine:X}_{idx}");
         }
         #endregion
 

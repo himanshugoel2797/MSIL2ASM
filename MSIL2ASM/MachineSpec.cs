@@ -13,7 +13,7 @@ namespace MSIL2ASM
 
         public static string GetMethodName(MethodDef info)
         {
-            var str = "mthd_" + GetTypeName(info.ParentType) + "_" + info.Name + "_";
+            var str = "mthd_" + (info.IsStatic ? "s_" : "") + GetTypeName(info.ParentType) + "_" + info.Name + "_";
 
             if (info.IsStatic && info.IsConstructor)
                 str = "cctor_" + GetTypeName(info.ParentType) + "_";
@@ -23,7 +23,7 @@ namespace MSIL2ASM
             var ps = info.Parameters;
             for (int i = 0; i < ps.Length; i++)
             {
-                str += i.ToString() + ps[i].Name + (ps[i].IsOut ? "o" : "") + (ps[i].IsRetVal ? "r" : "") + "_";
+                str += i.ToString() + ps[i].Name + (ps[i].IsOut ? "_o" : "") + (ps[i].IsIn ? "_i" : "") + (ps[i].IsRetVal ? "_r" : "") + "_";
             }
 
             return str;
@@ -31,7 +31,7 @@ namespace MSIL2ASM
 
         public static string GetMethodName(MethodInfo info)
         {
-            var str = "mthd_" + GetTypeName(info.ReflectedType) + "_" + info.Name + "_";
+            var str = "mthd_" + (info.IsStatic ? "s_" : "") + GetTypeName(info.ReflectedType) + "_" + info.Name + "_";
 
             if (info.IsStatic && info.IsConstructor)
                 str = "cctor_" + GetTypeName(info.ReflectedType) + "_";
@@ -41,7 +41,7 @@ namespace MSIL2ASM
             var ps = info.GetParameters();
             for (int i = 0; i < ps.Length; i++)
             {
-                str += i.ToString() + GetTypeName(ps[i].ParameterType) + (ps[i].IsOut ? "o" : "") + (ps[i].IsRetval ? "r" : "") + "_";
+                str += i.ToString() + GetTypeName(ps[i].ParameterType) + (ps[i].IsOut ? "_o" : "") + (ps[i].IsIn ? "_i" : "") + (ps[i].IsRetval ? "_r" : "") + "_";
             }
 
             return str;
@@ -49,7 +49,7 @@ namespace MSIL2ASM
 
         public static string GetMethodName(ConstructorInfo info)
         {
-            var str = "mthd_" + GetTypeName(info.ReflectedType) + "_" + info.Name + "_";
+            var str = "mthd_" + (info.IsStatic ? "s_" : "") + GetTypeName(info.ReflectedType) + "_" + info.Name + "_";
 
             if (info.IsStatic && info.IsConstructor)
                 str = "cctor_" + GetTypeName(info.ReflectedType) + "_";
@@ -59,7 +59,7 @@ namespace MSIL2ASM
             var ps = info.GetParameters();
             for (int i = 0; i < ps.Length; i++)
             {
-                str += i.ToString() + GetTypeName(ps[i].ParameterType) + (ps[i].IsOut ? "o" : "") + (ps[i].IsRetval ? "r" : "") + "_";
+                str += i.ToString() + GetTypeName(ps[i].ParameterType) + (ps[i].IsOut ? "_o" : "") + (ps[i].IsIn ? "_i" : "") + (ps[i].IsRetval ? "_r" : "") + "_";
             }
 
             return str;

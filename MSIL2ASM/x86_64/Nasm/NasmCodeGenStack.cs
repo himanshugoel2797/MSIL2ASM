@@ -24,6 +24,19 @@ namespace MSIL2ASM.x86_64.Nasm
                 case OptimizationInstructionSubType.Arg:
                     Emitter.MovRelativeAddressMultToRegisterSize(AssemRegisters.Rsp, AssemRegisters.Rsp, 0, ArgumentTopOffset + (int)tkn.Constants[0] * MachineSpec.PointerSize, tkn.ResultRegisters[0], MachineSpec.PointerSize);
                     break;
+                case OptimizationInstructionSubType.StaticField:
+                    Emitter.MovLabelRelativeAddressToRegisterSize(tkn.Strings[0] + "_static", (int)tkn.Constants[0], tkn.ResultRegisters[0], tkn.Results[0].Size);
+                    break;
+                case OptimizationInstructionSubType.FieldAddress:
+                    break;
+                case OptimizationInstructionSubType.Indirect:
+                    Emitter.MovRelativeAddressToRegisterSize(tkn.ParameterRegisters[0], 0, tkn.ResultRegisters[0], tkn.Results[0].Size);
+                    break;
+                case OptimizationInstructionSubType.Null:
+                    Emitter.MovConstantToRegister(0, tkn.ResultRegisters[0]);
+                    break;
+                default:
+                    throw new NotImplementedException();
             }
         }
 
@@ -33,10 +46,13 @@ namespace MSIL2ASM.x86_64.Nasm
             {
                 case OptimizationInstructionSubType.Local:
                     Locals[(int)tkn.Constants[0]].TypeSize = tkn.Parameters[0].Size;
+                    if (Locals[(int)tkn.Constants[0]].TypeSize == 0)
+                        Locals[(int)tkn.Constants[0]].TypeSize = MachineSpec.PointerSize;
+
                     if ((tkn.Parameters[0].ParameterLocation & OptimizationParameterLocation.Const) != 0)
                         Emitter.MovConstantToRegisterSize(tkn.Parameters[0].Value, tkn.ParameterRegisters[0], tkn.Parameters[0].Size);
 
-                    Emitter.MovRegisterToRegisterRelativeAddressMultSize(tkn.ParameterRegisters[0], tkn.Parameters[0].Size, AssemRegisters.Rsp, AssemRegisters.Rsp, 0, LocalTopOffset + (int)tkn.Constants[0] * MachineSpec.PointerSize);
+                    Emitter.MovRegisterToRegisterRelativeAddressMultSize(tkn.ParameterRegisters[0], Locals[(int)tkn.Constants[0]].TypeSize, AssemRegisters.Rsp, AssemRegisters.Rsp, 0, LocalTopOffset + (int)tkn.Constants[0] * MachineSpec.PointerSize);
                     break;
                 case OptimizationInstructionSubType.Arg:
                     if ((tkn.Parameters[0].ParameterLocation & OptimizationParameterLocation.Const) != 0)
@@ -44,9 +60,27 @@ namespace MSIL2ASM.x86_64.Nasm
 
                     Emitter.MovRegisterToRegisterRelativeAddressMultSize(tkn.ParameterRegisters[0], tkn.Parameters[0].Size, AssemRegisters.Rsp, AssemRegisters.Rsp, 0, ArgumentTopOffset + (int)tkn.Constants[0] * MachineSpec.PointerSize);
                     break;
+                case OptimizationInstructionSubType.StaticField:
+                    if ((tkn.Parameters[0].ParameterLocation & OptimizationParameterLocation.Const) != 0)
+                        Emitter.MovConstantToRegisterSize(tkn.Parameters[0].Value, tkn.ParameterRegisters[0], tkn.Parameters[0].Size);
+
+                    Emitter.MovRegisterToLabelRelativeAddressSize(tkn.ParameterRegisters[0], tkn.Parameters[0].Size, tkn.Strings[0] + "_static", (int)tkn.Constants[0]);
+                    break;
+                case OptimizationInstructionSubType.Indirect:
+                    if (tkn.Parameters[0].ParameterLocation == OptimizationParameterLocation.Const)
+                        Emitter.MovConstantToRegisterSize(tkn.Parameters[0].Value, tkn.ParameterRegisters[0], tkn.Parameters[0].Size);
+
+                    if (tkn.Parameters[1].ParameterLocation == OptimizationParameterLocation.Const)
+                        Emitter.MovRegisterToAddressSize(tkn.ParameterRegisters[0], tkn.Parameters[1].Value, tkn.Parameters[0].Size);
+                    else
+                        Emitter.MovRegisterToRegisterAddressSize(tkn.ParameterRegisters[0], tkn.ParameterRegisters[1], tkn.Parameters[0].Size);
+                    break;
+                default:
+                    throw new NotImplementedException();
             }
         }
 
+        #region Math
         private void AddInstr(OptimizationToken tkn)
         {
             switch (tkn.SubType)
@@ -59,6 +93,8 @@ namespace MSIL2ASM.x86_64.Nasm
                             Emitter.Add(tkn.ParameterRegisters[0], tkn.ParameterRegisters[1], tkn.ResultRegisters[0]);
                     }
                     break;
+                default:
+                    throw new NotImplementedException();
             }
         }
 
@@ -68,9 +104,14 @@ namespace MSIL2ASM.x86_64.Nasm
             {
                 case OptimizationInstructionSubType.None:
                     {
-                        Emitter.And(tkn.ParameterRegisters[0], tkn.ParameterRegisters[1], tkn.ResultRegisters[0]);
+                        if (tkn.Parameters[0].ParameterLocation == OptimizationParameterLocation.Const)
+                            Emitter.AndConst(tkn.Parameters[0].Value, tkn.ParameterRegisters[1], tkn.ResultRegisters[0]);
+                        else
+                            Emitter.And(tkn.ParameterRegisters[0], tkn.ParameterRegisters[1], tkn.ResultRegisters[0]);
                     }
                     break;
+                default:
+                    throw new NotImplementedException();
             }
         }
 
@@ -88,6 +129,8 @@ namespace MSIL2ASM.x86_64.Nasm
                         Emitter.UDivide(tkn.ParameterRegisters[1], tkn.ParameterRegisters[0], tkn.ResultRegisters[0]);
                     }
                     break;
+                default:
+                    throw new NotImplementedException();
             }
         }
 
@@ -97,9 +140,14 @@ namespace MSIL2ASM.x86_64.Nasm
             {
                 case OptimizationInstructionSubType.None:
                     {
-                        Emitter.Multiply(tkn.ParameterRegisters[0], tkn.ParameterRegisters[1], tkn.ResultRegisters[0]);
+                        if (tkn.Parameters[0].ParameterLocation == OptimizationParameterLocation.Const)
+                            Emitter.MultiplyConst(tkn.Parameters[0].Value, tkn.ParameterRegisters[1], tkn.ResultRegisters[0]);
+                        else
+                            Emitter.Multiply(tkn.ParameterRegisters[0], tkn.ParameterRegisters[1], tkn.ResultRegisters[0]);
                     }
                     break;
+                default:
+                    throw new NotImplementedException();
             }
         }
 
@@ -112,6 +160,8 @@ namespace MSIL2ASM.x86_64.Nasm
                         Emitter.Neg(tkn.ParameterRegisters[0], tkn.ResultRegisters[0]);
                     }
                     break;
+                default:
+                    throw new NotImplementedException();
             }
         }
 
@@ -124,6 +174,8 @@ namespace MSIL2ASM.x86_64.Nasm
                         Emitter.Not(tkn.ParameterRegisters[0], tkn.ResultRegisters[0]);
                     }
                     break;
+                default:
+                    throw new NotImplementedException();
             }
         }
 
@@ -133,9 +185,14 @@ namespace MSIL2ASM.x86_64.Nasm
             {
                 case OptimizationInstructionSubType.None:
                     {
-                        Emitter.Or(tkn.ParameterRegisters[0], tkn.ParameterRegisters[1], tkn.ResultRegisters[0]);
+                        if (tkn.Parameters[0].ParameterLocation == OptimizationParameterLocation.Const)
+                            Emitter.OrConst(tkn.Parameters[0].Value, tkn.ParameterRegisters[1], tkn.ResultRegisters[0]);
+                        else
+                            Emitter.Or(tkn.ParameterRegisters[0], tkn.ParameterRegisters[1], tkn.ResultRegisters[0]);
                     }
                     break;
+                default:
+                    throw new NotImplementedException();
             }
         }
 
@@ -153,17 +210,51 @@ namespace MSIL2ASM.x86_64.Nasm
                         Emitter.URemainder(tkn.ParameterRegisters[1], tkn.ParameterRegisters[0], tkn.ResultRegisters[0]);
                     }
                     break;
+                default:
+                    throw new NotImplementedException();
             }
         }
 
         private void ShlInstr(OptimizationToken tkn)
         {
-
+            switch (tkn.SubType)
+            {
+                case OptimizationInstructionSubType.None:
+                    {
+                        if (tkn.Parameters[0].ParameterLocation == OptimizationParameterLocation.Const)
+                            Emitter.ShiftLeft(tkn.ParameterRegisters[1], (int)tkn.Parameters[0].Value, tkn.ResultRegisters[0]);
+                        else
+                            Emitter.ShiftLeft(tkn.ParameterRegisters[1], tkn.ParameterRegisters[0], tkn.ResultRegisters[0]);
+                    }
+                    break;
+                default:
+                    throw new NotImplementedException();
+            }
         }
 
         private void ShrInstr(OptimizationToken tkn)
         {
-
+            switch (tkn.SubType)
+            {
+                case OptimizationInstructionSubType.None:
+                    {
+                        if (tkn.Parameters[0].ParameterLocation == OptimizationParameterLocation.Const)
+                            Emitter.ShiftRight(tkn.ParameterRegisters[1], (int)tkn.Parameters[0].Value, tkn.ResultRegisters[0]);
+                        else
+                            Emitter.ShiftRight(tkn.ParameterRegisters[1], tkn.ParameterRegisters[0], tkn.ResultRegisters[0]);
+                    }
+                    break;
+                case OptimizationInstructionSubType.Unsigned:
+                    {
+                        if (tkn.Parameters[0].ParameterLocation == OptimizationParameterLocation.Const)
+                            Emitter.ShiftRightUn(tkn.ParameterRegisters[1], (int)tkn.Parameters[0].Value, tkn.ResultRegisters[0]);
+                        else
+                            Emitter.ShiftRightUn(tkn.ParameterRegisters[1], tkn.ParameterRegisters[0], tkn.ResultRegisters[0]);
+                    }
+                    break;
+                default:
+                    throw new NotImplementedException();
+            }
         }
 
         private void SubInstr(OptimizationToken tkn)
@@ -172,9 +263,14 @@ namespace MSIL2ASM.x86_64.Nasm
             {
                 case OptimizationInstructionSubType.None:
                     {
-                        Emitter.Sub(tkn.ParameterRegisters[0], tkn.ParameterRegisters[1], tkn.ResultRegisters[0]);
+                        if (tkn.Parameters[0].ParameterLocation == OptimizationParameterLocation.Const)
+                            Emitter.SubConst(tkn.Parameters[0].Value, tkn.ParameterRegisters[1], tkn.ResultRegisters[0]);
+                        else
+                            Emitter.Sub(tkn.ParameterRegisters[0], tkn.ParameterRegisters[1], tkn.ResultRegisters[0]);
                     }
                     break;
+                default:
+                    throw new NotImplementedException();
             }
         }
 
@@ -190,8 +286,11 @@ namespace MSIL2ASM.x86_64.Nasm
                             Emitter.Xor(tkn.ParameterRegisters[0], tkn.ParameterRegisters[1], tkn.ResultRegisters[0]);
                     }
                     break;
+                default:
+                    throw new NotImplementedException();
             }
         }
+        #endregion
 
         private void BranchInstr(OptimizationToken tkn)
         {
@@ -253,12 +352,45 @@ namespace MSIL2ASM.x86_64.Nasm
                     Emitter.TestBool(tkn.ParameterRegisters[0]);
                     Emitter.JmpNeRelativeLabel((int)tkn.Constants[0]);
                     break;
+                default:
+                    throw new NotImplementedException();
             }
         }
 
-        private void CallInstr(OptimizationToken tkn)
+        private void CallInstr(OptimizationToken[] tkns, int idx)
         {
+            var tkn = tkns[idx];
 
+            //Determine active registers, save them
+            var activeRegs = GetActiveRegistersInclusive(tkns, idx);
+            for (int i = 0; i < activeRegs.Length; i++)
+                Emitter.Push(activeRegs[i]);
+
+            //Push arguments onto stack
+            for (int i = 0; i < tkn.Parameters.Length; i++)
+            {
+                if (tkn.Parameters[i].ParameterLocation == OptimizationParameterLocation.Const)
+                    Emitter.MovConstantToRegisterSize(tkn.Parameters[i].Value, tkn.ParameterRegisters[i], tkn.Parameters[i].Size);
+
+                Emitter.Push(tkn.ParameterRegisters[i]);
+            }
+
+            //Push return value onto stack
+            Emitter.Push(AssemRegisters.R10);
+
+            //Emit call instruction
+            Emitter.CallLabel(tkn.Strings[0]);
+
+            //Pop return value from stack
+            if (tkn.ResultRegisters.Length == 1)
+                Emitter.Pop(tkn.ResultRegisters[0]);
+
+            //Remove arguments from stack
+            Emitter.AddRegConst(AssemRegisters.Rsp, tkn.Parameters.Length * MachineSpec.PointerSize + ((tkn.ResultRegisters.Length == 1) ? 0 : MachineSpec.PointerSize));
+
+            //Restore active registers
+            for (int i = 0; i < activeRegs.Length; i++)
+                Emitter.Pop(activeRegs[i]);
         }
 
         private void CallVirtInstr(OptimizationToken tkn)
@@ -313,6 +445,8 @@ namespace MSIL2ASM.x86_64.Nasm
                     Emitter.Test(tkn.ParameterRegisters[1], tkn.ParameterRegisters[0]);
                     Emitter.CmpNeRelativeLabel(tkn.ResultRegisters[0], 4);
                     break;
+                default:
+                    throw new NotImplementedException();
             }
         }
 
@@ -338,6 +472,8 @@ namespace MSIL2ASM.x86_64.Nasm
                     check_ovf = true;
                     usigned = true;
                     break;
+                default:
+                    throw new NotImplementedException();
             }
 
             if (tkn.Parameters[0].ParameterLocation == OptimizationParameterLocation.Const)
@@ -382,11 +518,11 @@ namespace MSIL2ASM.x86_64.Nasm
 
         public void GenerateCode(Graph<GraphNode<OptimizationToken>> graph)
         {
-            var tkns = graph.Nodes.Values.ToArray();
+            var tkns = graph.Nodes.Values.Select(a => a.Node.Token).ToArray();
 
             for (int i = 0; i < tkns.Length; i++)
             {
-                var tkn = tkns[i].Node.Token;
+                var tkn = tkns[i];
 
                 Emitter.MakeLineLabel(tkn.Offset);
                 if (i > 0)
@@ -454,7 +590,7 @@ namespace MSIL2ASM.x86_64.Nasm
                         BranchInstr(tkn);
                         break;
                     case OptimizationInstruction.Call:
-                        CallInstr(tkn);
+                        CallInstr(tkns, i);
                         break;
                     case OptimizationInstruction.CallVirt:
                         CallVirtInstr(tkn);

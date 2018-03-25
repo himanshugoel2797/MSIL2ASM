@@ -448,7 +448,10 @@ namespace MSIL2ASM.x86_64.Nasm
                     if (res.ResultRegisters.Length != 0)
                     {
                         if (res.ResultRegisters[resultIdx].HasFlag(AssemRegisters.Any))
-                            res.ResultRegisters[resultIdx] = node.Node.Token.ParameterRegisters[j];
+                        {
+                            res.ResultRegisters[resultIdx] = reg;
+                            tkn.ParameterRegisters[j] = reg;
+                        }
                         else if (res.ResultRegisters[resultIdx] != reg)
                         {
                             //We have a conflict of assignments, will need to insert a move during code generation
@@ -501,6 +504,26 @@ namespace MSIL2ASM.x86_64.Nasm
                     i--;
                 }
             }
+        }
+
+        public AssemRegisters[] GetActiveRegistersInclusive(OptimizationToken[] tkns, int idx)
+        {
+            List<AssemRegisters> UsedRegisters = new List<AssemRegisters>();
+            for (int i1 = 0; i1 <= idx; i1++)
+            {
+                var tkn0 = tkns[i1];
+
+                for (int i2 = 0; i2 < tkn0.ResultRegisters.Length; i2++)
+                    if (!tkn0.ResultRegisters[i2].HasFlag(AssemRegisters.Any))
+                        UsedRegisters.Add(tkn0.ResultRegisters[i2]);
+
+                if (i1 <= idx)
+                    for (int i2 = 0; i2 < tkn0.ParameterRegisters.Length; i2++)
+                        if (!tkn0.ParameterRegisters[i2].HasFlag(AssemRegisters.Any))
+                            UsedRegisters.Remove(tkn0.ParameterRegisters[i2]);
+            }
+
+            return UsedRegisters.ToArray();
         }
     }
 }

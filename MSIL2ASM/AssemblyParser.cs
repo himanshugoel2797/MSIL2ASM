@@ -60,6 +60,14 @@ namespace MSIL2ASM
 
             foreach (TypeDef t in backends)
             {
+                for (int i = 0; i < t.StaticMethods.Length; i++)
+                    if (t.StaticMethods[i].ByteCode != null)
+                        t.StaticMethods[i].ByteCode.Reprocess(backends);
+
+                for (int i = 0; i < t.InstanceMethods.Length; i++)
+                    if (t.InstanceMethods[i].ByteCode != null)
+                        t.InstanceMethods[i].ByteCode.Reprocess(backends);
+
                 NasmEmitter nasmEmitter = new NasmEmitter(backends);
                 nasmEmitter.Generate(t);
                 File.WriteAllText(Path.Combine(outputDir, MachineSpec.GetTypeName(t) + ".S"), nasmEmitter.GetFile());

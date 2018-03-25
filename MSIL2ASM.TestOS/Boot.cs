@@ -69,6 +69,10 @@ namespace MSIL2ASM.TestOS
             int f = x | y;
             int g = x & y;
             int h = x ^ y;
+            int i = x >> y;
+            int j = x << y;
+            int k = x >> 5;
+            int l = x << 5;
         }
 
         public void Dispose()

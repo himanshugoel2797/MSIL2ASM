@@ -1252,6 +1252,54 @@ namespace MSIL2ASM
             SSAToken.Tokens = new List<SSAToken>();
         }
 
+        public void Reprocess(List<TypeDef> list)
+        {
+            for (int i = 0; i < Tokens.Count; i++)
+            {
+                switch (Tokens[i].Operation)
+                {
+                    case InstructionTypes.Ldsflda:
+                    case InstructionTypes.Ldsfld:
+                    case InstructionTypes.Stsfld:
+                        {
+                            for (int j = 0; j < list.Count; j++)
+                                for (int k = 0; k < list[j].StaticFields.Length; k++)
+                                {
+                                    if (list[j].StaticFields[k].MetadataToken == (int)Tokens[i].Constants[0])
+                                    {
+                                        Tokens[i].String = MachineSpec.GetTypeName(list[j]);
+                                        Tokens[i].Constants[0] = (ulong)list[j].StaticFields[k].Offset;
+                                        Tokens[i].RetValSz = list[j].StaticFields[k].Size;
+                                    }
+                                }
+
+                            if (string.IsNullOrEmpty(Tokens[i].String))
+                                throw new Exception();
+                        }
+                        break;
+                    case InstructionTypes.Ldflda:
+                    case InstructionTypes.Ldfld:
+                    case InstructionTypes.Stfld:
+                        {
+                            for (int j = 0; j < list.Count; j++)
+                                for (int k = 0; k < list[j].InstanceFields.Length; k++)
+                                {
+                                    if (list[j].InstanceFields[k].MetadataToken == (int)Tokens[i].Constants[0])
+                                    {
+                                        Tokens[i].String = MachineSpec.GetTypeName(list[j]);
+                                        Tokens[i].Constants[0] = (ulong)list[j].InstanceFields[k].Offset;
+                                        Tokens[i].RetValSz = list[j].InstanceFields[k].Size;
+                                    }
+                                }
+
+                            if (string.IsNullOrEmpty(Tokens[i].String))
+                                throw new Exception();
+                        }
+                        break;
+                }
+            }
+        }
+
         public SSAToken[] GetTokens()
         {
             return Tokens.ToArray();

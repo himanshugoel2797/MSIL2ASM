@@ -623,6 +623,7 @@ namespace MSIL2ASM.x86_64.Nasm
                                 ParameterLocation = OptimizationParameterLocation.Index,
                                 ParameterType = OptimizationParameterType.ManagedPointer | OptimizationParameterType.UnmanagedPointer,
                                 Value = (ulong)tkn.Parameters[0],
+                                Size = MachineSpec.PointerSize,
                             },
                         };
 
@@ -634,6 +635,30 @@ namespace MSIL2ASM.x86_64.Nasm
                                 ParameterType = OptimizationParameterType.Unknown
                             },
                         };
+
+                        switch ((OperandTypes)tkn.Constants[0])
+                        {
+                            case OperandTypes.I:
+                            case OperandTypes.U:
+                            case OperandTypes.I8:
+                            case OperandTypes.U8:
+                                oTkn.Results[0].Size = 8;
+                                break;
+                            case OperandTypes.I1:
+                            case OperandTypes.U1:
+                                oTkn.Results[0].Size = 1;
+                                break;
+                            case OperandTypes.I2:
+                            case OperandTypes.U2:
+                                oTkn.Results[0].Size = 2;
+                                break;
+                            case OperandTypes.I4:
+                            case OperandTypes.U4:
+                                oTkn.Results[0].Size = 4;
+                                break;
+                            default:
+                                throw new Exception("Unsupported type");
+                        }
                     }
                     break;
                 case InstructionTypes.LdLoc:
@@ -739,6 +764,30 @@ namespace MSIL2ASM.x86_64.Nasm
                                 Value = (ulong)tkn.Parameters[1],
                             },
                         };
+
+                        switch ((OperandTypes)tkn.Constants[0])
+                        {
+                            case OperandTypes.I:
+                            case OperandTypes.U:
+                            case OperandTypes.I8:
+                            case OperandTypes.U8:
+                                oTkn.Parameters[0].Size = 8;
+                                break;
+                            case OperandTypes.I1:
+                            case OperandTypes.U1:
+                                oTkn.Parameters[0].Size = 1;
+                                break;
+                            case OperandTypes.I2:
+                            case OperandTypes.U2:
+                                oTkn.Parameters[0].Size = 2;
+                                break;
+                            case OperandTypes.I4:
+                            case OperandTypes.U4:
+                                oTkn.Parameters[0].Size = 4;
+                                break;
+                            default:
+                                throw new Exception("Unsupported type");
+                        }
                     }
                     break;
                 case InstructionTypes.StLoc:
@@ -841,12 +890,14 @@ namespace MSIL2ASM.x86_64.Nasm
                 case InstructionTypes.Ldsfld:
                     {
                         oTkn.Constants = new ulong[] { tkn.Constants[0] };
+                        oTkn.Strings = new string[] { tkn.String };
                         oTkn.Results = new OptimizationParameter[]
                         {
                             new OptimizationParameter()
                             {
                                 ParameterLocation = OptimizationParameterLocation.Result,
                                 ParameterType = OptimizationParameterType.Unknown,
+                                Size = tkn.RetValSz,
                             }
                         };
                     }
@@ -854,6 +905,7 @@ namespace MSIL2ASM.x86_64.Nasm
                 case InstructionTypes.Stsfld:
                     {
                         oTkn.Constants = new ulong[] { tkn.Constants[0] };
+                        oTkn.Strings = new string[] { tkn.String };
                         oTkn.Parameters = new OptimizationParameter[]
                         {
                             new OptimizationParameter()
@@ -861,6 +913,7 @@ namespace MSIL2ASM.x86_64.Nasm
                                 ParameterLocation = OptimizationParameterLocation.Index,
                                 ParameterType = OptimizationParameterType.Unknown,
                                 Value = (ulong)tkn.Parameters[0],
+                                Size = tkn.RetValSz
                             }
                         };
                     }
@@ -1000,16 +1053,13 @@ namespace MSIL2ASM.x86_64.Nasm
                         oTkn.ParameterRegisters = new Assembly.AssemRegisters[]
                         {
                             Assembly.AssemRegisters.Rcx | Assembly.AssemRegisters.Const8,
-                            Assembly.AssemRegisters.None,
+                            Assembly.AssemRegisters.Any,
                         };
                         oTkn.ResultRegisters = new Assembly.AssemRegisters[]
                         {
-                            Assembly.AssemRegisters.None
+                            Assembly.AssemRegisters.Any
                         };
-                        oTkn.ThunkRegisters = new Assembly.AssemRegisters[]
-                        {
-                            Assembly.AssemRegisters.None
-                        };
+                        oTkn.ThunkRegisters = new Assembly.AssemRegisters[0];
                     }
                     break;
                 case InstructionTypes.Add:

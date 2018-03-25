@@ -8,22 +8,22 @@ namespace MSIL2ASM.CoreLib
 {
     public class Object
     {
-        public virtual string ToString()
+        public override string ToString()
         {
             return "Test";
         }
 
-        public virtual bool Equals(object obj)
+        public override bool Equals(object obj)
         {
             return false;
         }
 
-        public virtual int GetHashCode()
+        public override int GetHashCode()
         {
             return 0;
         }
 
-        public static bool Equals(object obj, object o)
+        public static new bool Equals(object obj, object o)
         {
             return false;
         }
