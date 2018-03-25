@@ -160,6 +160,12 @@ namespace MSIL2ASM
             return roots.ToArray();
         }
 
+        public void RemoveNode(int id)
+        {
+            if (Nodes.ContainsKey(id))
+                Nodes.Remove(id);
+        }
+
         public void RemoveDisconnected()
         {
             //Remove all nodes that have no connections

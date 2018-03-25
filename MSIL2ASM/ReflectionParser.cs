@@ -111,10 +111,10 @@ namespace MSIL2ASM
                 {
                     //TODO figure out how to handle Locals TypeDef
 
-                    if (mBody.LocalVariables[j].LocalType.IsValueType)
-                        mInfo.LocalsSize += Marshal.SizeOf(mBody.LocalVariables[j].LocalType);
-                    else
-                        mInfo.LocalsSize += MachineSpec.PointerSize;
+                    //if (mBody.LocalVariables[j].LocalType.IsValueType)
+                    //    mInfo.LocalsSize += Marshal.SizeOf(mBody.LocalVariables[j].LocalType);
+                    //else
+                    mInfo.LocalsSize += MachineSpec.PointerSize;
                 }
             }
 
@@ -182,19 +182,19 @@ namespace MSIL2ASM
                 if (instanceMembers[i].MemberType == MemberTypes.Field)
                 {
                     var inst = instanceMembers[i] as FieldInfo;
-                    var fm = TypeMapper.ResolveType(fakeType).GetField(inst.Name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    var fm = TypeMapper.ResolveType(inst.DeclaringType).GetField(inst.Name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                     if (fm != null) fieldList.Add(ParseField(inst, fm));
                 }
                 else if (instanceMembers[i].MemberType == MemberTypes.Method)
                 {
                     var inst = instanceMembers[i] as MethodInfo;
-                    var fm = TypeMapper.ResolveType(fakeType).GetMethod(inst.Name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, inst.GetParameters().Select(a => a.ParameterType).ToArray(), null);
+                    var fm = TypeMapper.ResolveType(inst.DeclaringType).GetMethod(inst.Name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, inst.GetParameters().Select(a => a.ParameterType).ToArray(), null);
                     if (fm != null) mthdList.Add(ParseMethod(inst, fm, tDef));
                 }
                 else if (instanceMembers[i].MemberType == MemberTypes.Constructor)
                 {
                     var inst = instanceMembers[i] as ConstructorInfo;
-                    var fm = TypeMapper.ResolveType(fakeType).GetConstructor(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, inst.GetParameters().Select(a => a.ParameterType).ToArray(), null);
+                    var fm = TypeMapper.ResolveType(inst.DeclaringType).GetConstructor(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, inst.GetParameters().Select(a => a.ParameterType).ToArray(), null);
                     if (fm != null) mthdList.Add(ParseMethod(inst, fm, tDef));
                 }
             }

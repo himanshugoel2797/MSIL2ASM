@@ -6,12 +6,14 @@ namespace MSIL2ASM.TestOS
 {
     public class Boot : IDisposable
     {
+        /*
         private static IDT IDT;
         private static GDT GDT;
         static int a = 0;
+        */
 
         [Alias("_CSEntryPoint")]
-        public static void Main(ulong magic)
+        public static void Main(long magic)
         {
             /*
             Builtins.x86_64.Out(0x3f8 + 1, 0x00);    // Disable all interrupts
@@ -45,16 +47,28 @@ namespace MSIL2ASM.TestOS
             IDT = new IDT();
             //GDT = new GDT();
             //GDT.baseT = 5 * GDT.baseT;
-            */
             string hexTable = "0123456789abcdef";
 
             while (magic > 0)
             {
                 x86_64.Out(0x3f8, hexTable[(int)(magic % 0xf)]);
-                magic = (magic % 16) / 2;
+                magic = (magic ^ 16);
             }
 
             x86_64.Halt();
+            */
+
+            int x = 10;
+            int y = 5;
+
+            int a = x / y;
+            int b = x * y;
+            int c = x % y;
+            int d = x + y;
+            int e = x - y;
+            int f = x | y;
+            int g = x & y;
+            int h = x ^ y;
         }
 
         public void Dispose()

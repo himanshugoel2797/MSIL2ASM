@@ -266,7 +266,7 @@ namespace MSIL2ASM
                 }
                 else if (parts[2] == "s")
                 {
-                    tkn.Constants = new ulong[] { (ulong)OperandTypes.I4, instructions.GetParameter(0) };
+                    tkn.Constants = new ulong[] { (ulong)OperandTypes.I4, unchecked((ulong)(sbyte)instructions.GetParameter(0)) };
                 }
             }
             oStack.Push(tkn.ID);
@@ -851,10 +851,11 @@ namespace MSIL2ASM
             var tkn = new SSAToken()
             {
                 Operation = op,
-                Parameters = new int[] { oStack.Peek() },
+                Parameters = new int[] { oStack.Pop() },
                 InstructionOffset = instructions.CurrentOffset,
                 Constants = null
             };
+            oStack.Push(tkn.ID);
             oStack.Push(tkn.ID);
         }
 

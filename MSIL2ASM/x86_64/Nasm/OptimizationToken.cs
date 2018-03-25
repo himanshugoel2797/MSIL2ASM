@@ -93,7 +93,7 @@ namespace MSIL2ASM.x86_64.Nasm
         public int Size { get; set; }
     }
 
-    public struct OptimizationToken
+    public class OptimizationToken
     {
         public int ID { get; set; }
         public int Offset { get; set; }

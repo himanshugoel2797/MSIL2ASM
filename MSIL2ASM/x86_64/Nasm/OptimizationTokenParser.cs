@@ -333,7 +333,7 @@ namespace MSIL2ASM.x86_64.Nasm
                             {
                                 ParameterLocation = OptimizationParameterLocation.Result,
                                 ParameterType = OptimizationParameterType.Unknown,
-                                Size = 0,
+                                Size = 8,
                                 Value = 0,
                             }
                         };
@@ -502,7 +502,7 @@ namespace MSIL2ASM.x86_64.Nasm
                             new OptimizationParameter()
                             {
                                 ParameterLocation = OptimizationParameterLocation.Result,
-                                ParameterType = OptimizationParameterType.Integer
+                                ParameterType = OptimizationParameterType.Integer,
                             }
                         };
 
@@ -525,6 +525,25 @@ namespace MSIL2ASM.x86_64.Nasm
                             case OperandTypes.I4:
                             case OperandTypes.U4:
                                 oTkn.Results[0].Size = 4;
+                                break;
+                            default:
+                                throw new Exception("Unsupported type");
+                        }
+
+                        switch ((OperandTypes)tkn.Constants[0])
+                        {
+                            case OperandTypes.I:
+                            case OperandTypes.I1:
+                            case OperandTypes.I2:
+                            case OperandTypes.I4:
+                            case OperandTypes.I8:
+                                break;
+                            case OperandTypes.U:
+                            case OperandTypes.U1:
+                            case OperandTypes.U2:
+                            case OperandTypes.U4:
+                            case OperandTypes.U8:
+                                oTkn.SubType |= OptimizationInstructionSubType.Unsigned;
                                 break;
                             default:
                                 throw new Exception("Unsupported type");
@@ -572,6 +591,7 @@ namespace MSIL2ASM.x86_64.Nasm
                             {
                                 ParameterLocation = OptimizationParameterLocation.Result,
                                 ParameterType = OptimizationParameterType.Unknown,
+                                Size = MachineSpec.PointerSize,
                             }
                         };
                     }
@@ -651,7 +671,7 @@ namespace MSIL2ASM.x86_64.Nasm
                                 ParameterLocation = OptimizationParameterLocation.Const,
                                 ParameterType = OptimizationParameterType.Integer,
                                 Value = 0,
-                                Size = 8,
+                                Size = MachineSpec.PointerSize,
                             },
                            };
                     }
@@ -673,7 +693,17 @@ namespace MSIL2ASM.x86_64.Nasm
                     break;
                 case InstructionTypes.Ret:
                     {
-                        //TODO Detect if a value is returned
+                        if (tkn.Parameters != null)
+                            oTkn.Parameters = new OptimizationParameter[]
+                            {
+                                new OptimizationParameter()
+                                {
+                                    ParameterLocation = OptimizationParameterLocation.Index,
+                                    ParameterType = OptimizationParameterType.Unknown,
+                                    Value = (ulong)tkn.Parameters[0],
+                                    Size = MachineSpec.PointerSize,
+                                }
+                            };
                     }
                     break;
                 case InstructionTypes.StArg:
@@ -686,6 +716,7 @@ namespace MSIL2ASM.x86_64.Nasm
                                 ParameterLocation = OptimizationParameterLocation.Index,
                                 ParameterType = OptimizationParameterType.Unknown,
                                 Value = (ulong)tkn.Parameters[0],
+                                Size = MachineSpec.PointerSize,
                             }
                         };
                     }
@@ -738,7 +769,8 @@ namespace MSIL2ASM.x86_64.Nasm
                             {
                                 ParameterLocation = OptimizationParameterLocation.Const,
                                 Value = 0,
-                                ParameterType = OptimizationParameterType.ManagedPointer
+                                ParameterType = OptimizationParameterType.ManagedPointer,
+                                Size = MachineSpec.PointerSize,
                             }
                         };
                     }
@@ -778,6 +810,125 @@ namespace MSIL2ASM.x86_64.Nasm
                             default:
                                 throw new Exception("Unsupported type");
                         }
+                        /*
+                        //Sign extend values
+                        switch ((OperandTypes)tkn.Constants[0])
+                        {
+                            case OperandTypes.I:
+                                oTkn.Results[0].Value = unchecked((ulong)(long)oTkn.Results[0].Value);
+                                break;
+                            case OperandTypes.I1:
+                                oTkn.Results[0].Value = unchecked((ulong)(long)(sbyte)oTkn.Results[0].Value);
+                                break;
+                            case OperandTypes.I2:
+                                oTkn.Results[0].Value = unchecked((ulong)(long)(short)oTkn.Results[0].Value);
+                                break;
+                            case OperandTypes.I4:
+                                oTkn.Results[0].Value = unchecked((ulong)(long)(int)oTkn.Results[0].Value);
+                                break;
+                            case OperandTypes.I8:
+                            case OperandTypes.U:
+                            case OperandTypes.U1:
+                            case OperandTypes.U2:
+                            case OperandTypes.U4:
+                            case OperandTypes.U8:
+                                break;
+                            default:
+                                throw new Exception("Unsupported type");
+                        }*/
+                    }
+                    break;
+                case InstructionTypes.Ldsfld:
+                    {
+                        oTkn.Constants = new ulong[] { tkn.Constants[0] };
+                        oTkn.Results = new OptimizationParameter[]
+                        {
+                            new OptimizationParameter()
+                            {
+                                ParameterLocation = OptimizationParameterLocation.Result,
+                                ParameterType = OptimizationParameterType.Unknown,
+                            }
+                        };
+                    }
+                    break;
+                case InstructionTypes.Stsfld:
+                    {
+                        oTkn.Constants = new ulong[] { tkn.Constants[0] };
+                        oTkn.Parameters = new OptimizationParameter[]
+                        {
+                            new OptimizationParameter()
+                            {
+                                ParameterLocation = OptimizationParameterLocation.Index,
+                                ParameterType = OptimizationParameterType.Unknown,
+                                Value = (ulong)tkn.Parameters[0],
+                            }
+                        };
+                    }
+                    break;
+                case InstructionTypes.Ldfld:
+                    {
+                        oTkn.Constants = new ulong[] { tkn.Constants[0] };
+                        oTkn.Parameters = new OptimizationParameter[]
+                        {
+                            new OptimizationParameter()
+                            {
+                                ParameterLocation = OptimizationParameterLocation.Index,
+                                ParameterType = OptimizationParameterType.ManagedPointer,
+                                Value = (ulong)tkn.Parameters[0],
+                            }
+                        };
+
+                        oTkn.Results = new OptimizationParameter[]
+                        {
+                            new OptimizationParameter()
+                            {
+                                ParameterLocation = OptimizationParameterLocation.Result,
+                                ParameterType = OptimizationParameterType.Unknown,
+                            }
+                        };
+                    }
+                    break;
+                case InstructionTypes.Ldflda:
+                    {
+                        oTkn.Constants = new ulong[] { tkn.Constants[0] };
+                        oTkn.Parameters = new OptimizationParameter[]
+                        {
+                            new OptimizationParameter()
+                            {
+                                ParameterLocation = OptimizationParameterLocation.Index,
+                                ParameterType = OptimizationParameterType.ManagedPointer,
+                                Value = (ulong)tkn.Parameters[0],
+                            }
+                        };
+
+                        oTkn.Results = new OptimizationParameter[]
+                        {
+                            new OptimizationParameter()
+                            {
+                                ParameterLocation = OptimizationParameterLocation.Result,
+                                ParameterType = OptimizationParameterType.ManagedPointer,
+                            }
+                        };
+                    }
+                    break;
+                case InstructionTypes.Stfld:
+                    {
+                        oTkn.Constants = new ulong[] { tkn.Constants[0] };
+                        oTkn.Parameters = new OptimizationParameter[]
+                        {
+                            new OptimizationParameter()
+                            {
+                                ParameterLocation = OptimizationParameterLocation.Index,
+                                ParameterType = OptimizationParameterType.Unknown,
+                                Value = (ulong)tkn.Parameters[0],
+                            },
+                            new OptimizationParameter()
+                            {
+                                ParameterLocation = OptimizationParameterLocation.Index,
+                                ParameterType = OptimizationParameterType.ManagedPointer,
+                                Value = (ulong)tkn.Parameters[0],
+                            },
+                        };
                     }
                     break;
                 default:
@@ -792,6 +943,20 @@ namespace MSIL2ASM.x86_64.Nasm
 
             switch (tkn.Operation)
             {
+                case InstructionTypes.Convert:
+                case InstructionTypes.ConvertCheckOverflow:
+                    {
+                        oTkn.ParameterRegisters = new Assembly.AssemRegisters[]
+                        {
+                            Assembly.AssemRegisters.Any | Assembly.AssemRegisters.Const,
+                        };
+                        oTkn.ResultRegisters = new Assembly.AssemRegisters[]
+                        {
+                            Assembly.AssemRegisters.Rax
+                        };
+                        oTkn.ThunkRegisters = new Assembly.AssemRegisters[0];
+                    }
+                    break;
                 case InstructionTypes.UDivide:
                 case InstructionTypes.Divide:
                     {
@@ -845,6 +1010,21 @@ namespace MSIL2ASM.x86_64.Nasm
                         {
                             Assembly.AssemRegisters.None
                         };
+                    }
+                    break;
+                case InstructionTypes.Add:
+                case InstructionTypes.Xor:
+                    {
+                        oTkn.ParameterRegisters = new Assembly.AssemRegisters[]
+                        {
+                            Assembly.AssemRegisters.Any | Assembly.AssemRegisters.Const8 | Assembly.AssemRegisters.Const16 | Assembly.AssemRegisters.Const32,
+                            Assembly.AssemRegisters.Any,
+                        };
+                        oTkn.ResultRegisters = new Assembly.AssemRegisters[]
+                        {
+                            Assembly.AssemRegisters.Any
+                        };
+                        oTkn.ThunkRegisters = new Assembly.AssemRegisters[0];
                     }
                     break;
                 default:

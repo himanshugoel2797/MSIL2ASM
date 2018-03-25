@@ -15,11 +15,7 @@ namespace MSIL2ASM.x86_64.Nasm
     {
         class LocalAllocs
         {
-            public int sz;
-            public int id;
             public int TypeSize;
-            public bool ValueKnown;
-            public ulong Value;
         }
 
         private List<TypeDef> types;
@@ -34,8 +30,6 @@ namespace MSIL2ASM.x86_64.Nasm
         private InstrEmitter Emitter;
         private int ArgumentTopOffset = 0;
         private int LocalTopOffset = 0;
-        private int SpillTopOffset = 0;
-        private int SpillCurOffset = 0;
         private List<LocalAllocs> Locals;
 
         public NasmEmitter(List<TypeDef> types)
@@ -46,7 +40,9 @@ namespace MSIL2ASM.x86_64.Nasm
             stringTable = new List<string>();
             externals = new List<string>();
             static_ctors = new List<string>();
+
             Emitter = new InstrEmitter();
+
             this.types = types;
         }
 
@@ -128,6 +124,7 @@ namespace MSIL2ASM.x86_64.Nasm
 
         public void GenerateMethod(TypeDef tDef, MethodDef method)
         {
+            prefix = MachineSpec.GetTypeName(tDef);
             var mthdName = MachineSpec.GetMethodName(method);
             Emitter.MakeGlobalFunction(mthdName);
 
@@ -139,11 +136,22 @@ namespace MSIL2ASM.x86_64.Nasm
             LocalTopOffset = method.LocalsSize;
             Locals = new List<LocalAllocs>();
 
+            Emitter.SubRegConst(AssemRegisters.Rsp, LocalTopOffset);
+
+            //Initialize Locals table
+            for (int i = 0; i < method.LocalsSize / MachineSpec.PointerSize; i++)
+            {
+                Locals.Add(new LocalAllocs());
+            }
+
             //Setup StackSpillOffset
             if (method.StackSize > 15)
                 throw new NotImplementedException();
 
             //Convert the tokens into a more flexible form that is suited to optimization
+            if (method.ByteCode == null)
+                return;
+
             var tkns = method.ByteCode.GetTokens();
             var mainGraph = new Graph<GraphNode<OptimizationToken>>();
             for (int i = 0; i < tkns.Length; i++)
@@ -173,10 +181,10 @@ namespace MSIL2ASM.x86_64.Nasm
 
 
             //Propogate thunk registers through the graph
-            var thunkSets = new Dictionary<AssemRegisters, bool>[subGraphs.Length];
+            var thunkSets = new Dictionary<AssemRegisters, List<int>>[subGraphs.Length];
             for (int i = 0; i < subGraphs.Length; i++)
             {
-                Thunks = new Dictionary<AssemRegisters, bool>();
+                Thunks = new Dictionary<AssemRegisters, List<int>>();
                 var leaves = subGraphs[i].GetLeafNodes();
 
                 for (int j = 0; j < leaves.Length; j++)
@@ -241,10 +249,13 @@ namespace MSIL2ASM.x86_64.Nasm
                 RegisterAllocs = registerSets[i];
                 RegisterInUse = registerInUseSets[i];
 
-                var roots = subGraphs[i].GetLeafNodes();
+                var nodes = subGraphs[i].Nodes.Values.ToArray();
+                var node_tkns = nodes.Select(a => a.Node.Token).ToArray();
 
-                for (int j = 0; j < roots.Length; j++)
-                    AllocateRegisters(roots[j], subGraphs[i]);
+                for (int j = 0; j < node_tkns.Length; j++)
+                {
+                    AllocateRegisters(node_tkns);
+                }
 
                 registerInUseSets[i] = RegisterInUse;
                 registerSets[i] = RegisterAllocs;
@@ -263,17 +274,9 @@ namespace MSIL2ASM.x86_64.Nasm
             {
                 GenerateCode(subGraphs[i]);
             }
-
-            for (int i = 0; i < tkns.Length; i++)
-                switch (tkns[i].Operation)
-                {
-                    default:
-                        throw new Exception(tkns[i].Operation.ToString());
-                }
-
         }
 
-        private Dictionary<AssemRegisters, bool> Thunks = new Dictionary<AssemRegisters, bool>();
+        private Dictionary<AssemRegisters, List<int>> Thunks = new Dictionary<AssemRegisters, List<int>>();
         private Dictionary<AssemRegisters, int> RegisterAllocs = new Dictionary<AssemRegisters, int>();
         private Dictionary<AssemRegisters, bool> RegisterInUse = new Dictionary<AssemRegisters, bool>();
         public void ThunkRegisters(int root, Graph<GraphNode<OptimizationToken>> graph)
@@ -282,39 +285,112 @@ namespace MSIL2ASM.x86_64.Nasm
             for (int i = 0; i < node.Incoming.Count; i++)
             {
                 for (int j = 0; j < node.Node.Token.ThunkRegisters.Length; j++)
-                    Thunks[node.Node.Token.ThunkRegisters[j]] = false;
+                {
+                    if (!Thunks.ContainsKey(node.Node.Token.ThunkRegisters[j]))
+                        Thunks[node.Node.Token.ThunkRegisters[j]] = new List<int>();
+
+                    if (!Thunks[node.Node.Token.ThunkRegisters[j]].Contains(node.Node.Token.Offset))
+                        Thunks[node.Node.Token.ThunkRegisters[j]].Add(node.Node.Token.Offset);
+                }
 
                 ThunkRegisters(node.Incoming[i], graph);
             }
         }
 
-        public void AllocateRegisters(int root, Graph<GraphNode<OptimizationToken>> graph)
+        public void AllocateRegisters(OptimizationToken[] graph)
         {
-            var node = graph.Nodes[root];
-            var tkn = node.Node.Token;
-
-            for (int i = 0; i < tkn.ParameterRegisters.Length; i++)
+            for (int i0 = 0; i0 < graph.Length; i0++)
             {
-                if (tkn.Parameters[i].ParameterLocation == OptimizationParameterLocation.Index)
-                    AllocateRegisters((int)tkn.Parameters[i].Value, graph);
+                var tkn = graph[i0];
 
-                if (tkn.ParameterRegisters[i].HasFlag(AssemRegisters.Any) && tkn.Parameters[i].ParameterLocation == OptimizationParameterLocation.Index)
+                for (int i = 0; i < tkn.ResultRegisters.Length; i++)
+                    if (tkn.ResultRegisters[i].HasFlag(AssemRegisters.Any))
+                    {
+                        //Ensure that the chosen register isn't used between the instructions
+                        List<AssemRegisters> UsedRegisters = new List<AssemRegisters>();
+                        for (int i1 = 0; i1 < graph.Length; i1++)
+                        {
+                            var tkn0 = graph[i1];
+
+                            for (int i2 = 0; i2 < tkn0.ResultRegisters.Length; i2++)
+                                if (!tkn0.ResultRegisters[i2].HasFlag(AssemRegisters.Any))
+                                    UsedRegisters.Add(tkn0.ResultRegisters[i2]);
+
+                            if (i1 < i0)
+                                for (int i2 = 0; i2 < tkn0.ParameterRegisters.Length; i2++)
+                                    if (!tkn0.ParameterRegisters[i2].HasFlag(AssemRegisters.Any))
+                                        UsedRegisters.Remove(tkn0.ParameterRegisters[i2]);
+
+                        }
+
+                        //Allocate a register, ensuring that is doesn't cross a thunk boundary
+                        var avl_regs = RegisterAllocs.Where(a => !UsedRegisters.Contains(a.Key)).Select(a => a.Key).ToArray();
+                        AssemRegisters alloc_reg = AssemRegisters.None;
+
+                        if (avl_regs.Length == 0)
+                            throw new Exception("Not enough registers!");
+
+                        for (int i1 = 0; i1 < avl_regs.Length; i1++)
+                        {
+                            if (Thunks.ContainsKey(avl_regs[i1]))
+                            {
+                                var thunk_inbetween = Thunks[avl_regs[i1]].Where(a => (a < i0));
+
+                                if (thunk_inbetween.Count() == 0)
+                                {
+                                    //Allocate this register
+                                    alloc_reg = avl_regs[i];
+                                    break;
+                                }
+                            }
+                            else
+                            {
+                                alloc_reg = avl_regs[i];
+                                break;
+                            }
+                        }
+
+                        //Allocate this register
+                        graph[i0].ResultRegisters[i] = alloc_reg;
+
+                        //Pass this allocation onto any parameters that refer to this result
+                        for (int i1 = 0; i1 < graph.Length; i1++)
+                        {
+                            var tkn0 = graph[i1];
+                            for (int i2 = 0; i2 < tkn0.ParameterRegisters.Length; i2++)
+                            {
+                                if (tkn0.Parameters[i2].ParameterLocation == OptimizationParameterLocation.Index && tkn0.Parameters[i2].Value == (ulong)tkn.ID)
+                                    graph[i1].ParameterRegisters[i2] = alloc_reg;
+                            }
+                        }
+                    }
+
+                for (int i = 0; i < tkn.ParameterRegisters.Length; i++)
                 {
-                    //Allocate a register for the constant
-                    var freeRegs = RegisterAllocs.Where(a => a.Value == 0);
+                    if (tkn.Parameters[i].ParameterLocation == OptimizationParameterLocation.Const && (tkn.ParameterRegisters[i] & AssemRegisters.Const) == 0)
+                    {
+                        List<AssemRegisters> UsedRegisters = new List<AssemRegisters>();
+                        for (int i1 = 0; i1 <= i0; i1++)
+                        {
+                            var tkn0 = graph[i1];
 
-                    if (freeRegs.Count() == 0)
-                        throw new Exception("Not enough registers available.");
+                            for (int i2 = 0; i2 < tkn0.ResultRegisters.Length; i2++)
+                                if (!tkn0.ResultRegisters[i2].HasFlag(AssemRegisters.Any))
+                                    UsedRegisters.Add(tkn0.ResultRegisters[i2]);
 
-                    var allocReg = freeRegs.First(/*a => !RegisterInUse[a.Key]*/).Key;
-                    RegisterAllocs[allocReg] = tkn.Offset;
+                            if (i1 < i0)
+                                for (int i2 = 0; i2 < tkn0.ParameterRegisters.Length; i2++)
+                                    if (!tkn0.ParameterRegisters[i2].HasFlag(AssemRegisters.Any))
+                                        UsedRegisters.Remove(tkn0.ParameterRegisters[i2]);
+                        }
 
-                    graph.Nodes[root].Node.Token.ParameterRegisters[i] = allocReg;
+                        var avl_regs = RegisterAllocs.Where(a => !UsedRegisters.Contains(a.Key)).Select(a => a.Key).ToArray();
+                        if (avl_regs.Length == 0)
+                            throw new Exception("Not enough registers!");
 
-                    var res_idx = graph.Nodes[(int)tkn.Parameters[i].Value].Node.Token.GetResultIdx();
-                    graph.Nodes[(int)tkn.Parameters[i].Value].Node.Token.ResultRegisters[res_idx] = allocReg;
+                        tkn.ParameterRegisters[i] = avl_regs[0];
+                    }
                 }
-
             }
         }
 
@@ -327,6 +403,15 @@ namespace MSIL2ASM.x86_64.Nasm
             //If the ParameterRegisters is given and is an active thunk register, mark the register as needing to be saved
             for (int j = 0; j < tkn.ParameterRegisters.Length; j++)
             {
+                OptimizationToken res = null;
+                int resultIdx = -1;
+
+                if (tkn.Parameters[j].ParameterLocation == OptimizationParameterLocation.Index)
+                {
+                    res = graph.Nodes[(int)tkn.Parameters[j].Value].Node.Token;
+                    resultIdx = res.GetResultIdx();
+                }
+
                 bool isRegBased = true;
                 if (tkn.Parameters[j].ParameterLocation == OptimizationParameterLocation.Const && (tkn.ParameterRegisters[j] & AssemRegisters.Const) != 0)
                 {
@@ -336,18 +421,22 @@ namespace MSIL2ASM.x86_64.Nasm
                     if (tkn.Parameters[j].Value <= byte.MaxValue & tkn.ParameterRegisters[j].HasFlag(AssemRegisters.Const8))
                     {
                         tkn.ParameterRegisters[j] = AssemRegisters.Const8;
+                        tkn.Parameters[j].Size = 1;
                     }
                     else if (tkn.Parameters[j].Value <= ushort.MaxValue & tkn.ParameterRegisters[j].HasFlag(AssemRegisters.Const16))
                     {
                         tkn.ParameterRegisters[j] = AssemRegisters.Const16;
+                        tkn.Parameters[j].Size = 2;
                     }
                     else if (tkn.Parameters[j].Value <= uint.MaxValue & tkn.ParameterRegisters[j].HasFlag(AssemRegisters.Const32))
                     {
                         tkn.ParameterRegisters[j] = AssemRegisters.Const32;
+                        tkn.Parameters[j].Size = 4;
                     }
                     else
                     {
                         tkn.ParameterRegisters[j] = AssemRegisters.Const64;
+                        tkn.Parameters[j].Size = 8;
                     }
                 }
 
@@ -356,11 +445,8 @@ namespace MSIL2ASM.x86_64.Nasm
                     var reg = tkn.ParameterRegisters[j] & ~AssemRegisters.Const;
 
                     //Propogate the result register
-                    var res = graph.Nodes[(int)tkn.Parameters[j].Value].Node.Token;
                     if (res.ResultRegisters.Length != 0)
                     {
-                        int resultIdx = res.GetResultIdx();
-
                         if (res.ResultRegisters[resultIdx].HasFlag(AssemRegisters.Any))
                             res.ResultRegisters[resultIdx] = node.Node.Token.ParameterRegisters[j];
                         else if (res.ResultRegisters[resultIdx] != reg)
@@ -368,49 +454,23 @@ namespace MSIL2ASM.x86_64.Nasm
                             //We have a conflict of assignments, will need to insert a move during code generation
                         }
                     }
-
-                    //If the ParameterRegisters is given and is a Thunk register, mark it as active
-                    if (Thunks.ContainsKey(reg))
-                    {
-                        Thunks[reg] = true;
-                        RegisterAllocs[reg] = tkn.Offset;
-                    }
                 }
                 else if (isRegBased && tkn.ParameterRegisters[j].HasFlag(AssemRegisters.Any))
                 {
                     if (tkn.Parameters[j].ParameterLocation != OptimizationParameterLocation.Const)
                     {
                         //Propogate the register from Result into the Parameter
-                        var res = graph.Nodes[(int)tkn.Parameters[j].Value].Node.Token;
                         if (res.ResultRegisters.Length == 0)
                             throw new Exception("Expected more than 0 results from previous token.");
 
-                        tkn.ParameterRegisters[j] = res.ResultRegisters[res.GetResultIdx()];
-                    }
-                    else
-                    {
-                        //Allocate a register for the constant
-                        var freeRegs = RegisterAllocs.Where(a => a.Value == 0);
-
-                        if (freeRegs.Count() == 0)
-                            throw new Exception("Not enough registers available.");
-
-                        var allocReg = freeRegs.First().Key;
-                        RegisterAllocs[allocReg] = tkn.Offset;
-                        tkn.ParameterRegisters[j] = allocReg;
+                        tkn.ParameterRegisters[j] = res.ResultRegisters[resultIdx];
+                        tkn.Parameters[j].Size = res.Results[resultIdx].Size;
                     }
                 }
 
                 if (tkn.Parameters[j].ParameterLocation == OptimizationParameterLocation.Index)
                     PropogateRegisters((int)tkn.Parameters[j].Value, graph);
             }
-
-            //If the incoming connection is given, is not an active thunk register and the ParameterRegisters is Any, update ParameterRegisters
-            //If the ResultRegisters is given and is a Thunk register, mark it as active
-
-
-            //PropogateRegisters(node.Incoming[i], graph);
-
         }
 
         public void SimplifyGraph(int root, Graph<GraphNode<OptimizationToken>> graph)
@@ -428,11 +488,15 @@ namespace MSIL2ASM.x86_64.Nasm
 
                 if (results != null && results[result_idx].ParameterLocation == OptimizationParameterLocation.Const && results[result_idx].ParameterType == OptimizationParameterType.Integer)
                 {
-                    graph.RemoveDirectionalEdge(node.Incoming[i], root);
+                    int id = node.Incoming[i];
+                    graph.RemoveDirectionalEdge(id, root);
                     graph.Nodes[root].Node.Token.Parameters[i].ParameterLocation = OptimizationParameterLocation.Const;
                     graph.Nodes[root].Node.Token.Parameters[i].ParameterType = results[result_idx].ParameterType;
                     graph.Nodes[root].Node.Token.Parameters[i].Size = results[result_idx].Size;
                     graph.Nodes[root].Node.Token.Parameters[i].Value = results[result_idx].Value;
+
+                    if (paramNode.Incoming.Count == 0 && paramNode.Outgoing.Count == 0)
+                        graph.RemoveNode(id);
 
                     i--;
                 }
