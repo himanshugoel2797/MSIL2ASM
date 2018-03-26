@@ -29,8 +29,10 @@ namespace MSIL2ASM.x86_64.Nasm
         private string prefix;
         private InstrEmitter Emitter;
         private int ArgumentTopOffset = 0;
+        private int LocalTopSize = 0;
         private int LocalTopOffset = 0;
-        private List<LocalAllocs> Locals;
+
+        private Queue<int> InstructionOffsets;
 
         public NasmEmitter(List<TypeDef> types)
         {
@@ -90,6 +92,8 @@ namespace MSIL2ASM.x86_64.Nasm
         {
             EmitStaticStruct(MachineSpec.GetTypeName(tDef) + "_static", tDef.StaticSize);
 
+            //TODO generate reference copies of objects
+
             for (int i = 0; i < tDef.StaticMethods.Length; i++)
                 GenerateMethod(tDef, tDef.StaticMethods[i]);
 
@@ -124,25 +128,29 @@ namespace MSIL2ASM.x86_64.Nasm
 
         public void GenerateMethod(TypeDef tDef, MethodDef method)
         {
+
             prefix = MachineSpec.GetTypeName(tDef);
             var mthdName = MachineSpec.GetMethodName(method);
+            if (mthdName == "ctor_System_Object_0System_Object_i_1System_Object_r_")
+                return;
+
+            for (int i = 0; i < method.Aliases.Count; i++)
+                Emitter.MakeGlobalFunction(method.Aliases[i]);
             Emitter.MakeGlobalFunction(mthdName);
 
+            if (method.IsConstructor && method.IsStatic)
+                static_ctors.Add(mthdName);
+
             //Setup ArgumentTopOffset
-            ArgumentTopOffset = MachineSpec.PointerSize;
+            ArgumentTopOffset = MachineSpec.PointerSize * 2;
 
             //Setup LocalTopOffset
             ArgumentTopOffset += method.LocalsSize;
-            LocalTopOffset = method.LocalsSize;
-            Locals = new List<LocalAllocs>();
+            LocalTopSize = method.LocalsSize;
+            LocalTopOffset = 0;
+            InstructionOffsets = new Queue<int>();
 
-            Emitter.SubRegConst(AssemRegisters.Rsp, LocalTopOffset);
-
-            //Initialize Locals table
-            for (int i = 0; i < method.LocalsSize / MachineSpec.PointerSize; i++)
-            {
-                Locals.Add(new LocalAllocs());
-            }
+            Emitter.SubRegConst(AssemRegisters.Rsp, LocalTopSize);
 
             //Setup StackSpillOffset
             if (method.StackSize > 15)
@@ -156,6 +164,8 @@ namespace MSIL2ASM.x86_64.Nasm
             var mainGraph = new Graph<GraphNode<OptimizationToken>>();
             for (int i = 0; i < tkns.Length; i++)
             {
+                InstructionOffsets.Enqueue(tkns[i].InstructionOffset);
+
                 if (tkns[i].Operation == InstructionTypes.Nop)
                     continue;
 
@@ -367,7 +377,7 @@ namespace MSIL2ASM.x86_64.Nasm
 
                 for (int i = 0; i < tkn.ParameterRegisters.Length; i++)
                 {
-                    if (tkn.Parameters[i].ParameterLocation == OptimizationParameterLocation.Const && (tkn.ParameterRegisters[i] & AssemRegisters.Const) == 0)
+                    if (tkn.Parameters[i].ParameterLocation == OptimizationParameterLocation.Const && tkn.ParameterRegisters[i] == AssemRegisters.Any)
                     {
                         List<AssemRegisters> UsedRegisters = new List<AssemRegisters>();
                         for (int i1 = 0; i1 <= i0; i1++)
@@ -418,25 +428,30 @@ namespace MSIL2ASM.x86_64.Nasm
                     isRegBased = false;
 
                     //Update the entry to be using the constant form
-                    if (tkn.Parameters[j].Value <= byte.MaxValue & tkn.ParameterRegisters[j].HasFlag(AssemRegisters.Const8))
+                    if (tkn.Parameters[j].Value <= byte.MaxValue && tkn.ParameterRegisters[j].HasFlag(AssemRegisters.Const8))
                     {
                         tkn.ParameterRegisters[j] = AssemRegisters.Const8;
                         tkn.Parameters[j].Size = 1;
                     }
-                    else if (tkn.Parameters[j].Value <= ushort.MaxValue & tkn.ParameterRegisters[j].HasFlag(AssemRegisters.Const16))
+                    else if (tkn.Parameters[j].Value <= ushort.MaxValue && tkn.ParameterRegisters[j].HasFlag(AssemRegisters.Const16))
                     {
                         tkn.ParameterRegisters[j] = AssemRegisters.Const16;
                         tkn.Parameters[j].Size = 2;
                     }
-                    else if (tkn.Parameters[j].Value <= uint.MaxValue & tkn.ParameterRegisters[j].HasFlag(AssemRegisters.Const32))
+                    else if (tkn.Parameters[j].Value <= uint.MaxValue && tkn.ParameterRegisters[j].HasFlag(AssemRegisters.Const32))
                     {
                         tkn.ParameterRegisters[j] = AssemRegisters.Const32;
                         tkn.Parameters[j].Size = 4;
                     }
-                    else
+                    else if (tkn.ParameterRegisters[j].HasFlag(AssemRegisters.Const64))
                     {
                         tkn.ParameterRegisters[j] = AssemRegisters.Const64;
                         tkn.Parameters[j].Size = 8;
+                    }
+                    else
+                    {
+                        tkn.ParameterRegisters[j] &= ~AssemRegisters.Const;
+                        isRegBased = true;
                     }
                 }
 
@@ -445,7 +460,7 @@ namespace MSIL2ASM.x86_64.Nasm
                     var reg = tkn.ParameterRegisters[j] & ~AssemRegisters.Const;
 
                     //Propogate the result register
-                    if (res.ResultRegisters.Length != 0)
+                    if (res != null && res.ResultRegisters.Length != 0)
                     {
                         if (res.ResultRegisters[resultIdx].HasFlag(AssemRegisters.Any))
                         {
@@ -457,17 +472,23 @@ namespace MSIL2ASM.x86_64.Nasm
                             //We have a conflict of assignments, will need to insert a move during code generation
                         }
                     }
+                    else
+                        tkn.ParameterRegisters[j] = reg;
                 }
                 else if (isRegBased && tkn.ParameterRegisters[j].HasFlag(AssemRegisters.Any))
                 {
-                    if (tkn.Parameters[j].ParameterLocation != OptimizationParameterLocation.Const)
+                    if (res != null && tkn.Parameters[j].ParameterLocation != OptimizationParameterLocation.Const)
                     {
                         //Propogate the register from Result into the Parameter
                         if (res.ResultRegisters.Length == 0)
                             throw new Exception("Expected more than 0 results from previous token.");
 
                         tkn.ParameterRegisters[j] = res.ResultRegisters[resultIdx];
-                        tkn.Parameters[j].Size = res.Results[resultIdx].Size;
+
+                        if (tkn.Parameters[j].Size != 0)
+                            res.Results[resultIdx].Size = tkn.Parameters[j].Size;
+                        else
+                            throw new Exception();
                     }
                 }
 
@@ -495,7 +516,10 @@ namespace MSIL2ASM.x86_64.Nasm
                     graph.RemoveDirectionalEdge(id, root);
                     graph.Nodes[root].Node.Token.Parameters[i].ParameterLocation = OptimizationParameterLocation.Const;
                     graph.Nodes[root].Node.Token.Parameters[i].ParameterType = results[result_idx].ParameterType;
-                    graph.Nodes[root].Node.Token.Parameters[i].Size = results[result_idx].Size;
+
+                    if (results[result_idx].Size != 0)
+                        graph.Nodes[root].Node.Token.Parameters[i].Size = results[result_idx].Size;
+
                     graph.Nodes[root].Node.Token.Parameters[i].Value = results[result_idx].Value;
 
                     if (paramNode.Incoming.Count == 0 && paramNode.Outgoing.Count == 0)

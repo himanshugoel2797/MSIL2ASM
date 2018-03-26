@@ -11,11 +11,15 @@ namespace MSIL2ASM
     {
         public const int PointerSize = 8;
 
-        public static string GetMethodName(MethodDef info)
+        private static string GetMethodName(bool isStatic, bool isCtor, string parentName, string name, ParameterDef[] ps)
         {
-            var str = "mthd_" + (info.IsStatic ? "s_" : "") + GetTypeName(info.ParentType) + "_" + info.Name + "_";
+            var str = "mthd_" + (isStatic ? "s_" : "") + parentName + "_" + name + "_";
 
-            var ps = info.Parameters;
+            if (isStatic && isCtor)
+                str = "cctor_" + parentName + "_";
+            else if (isCtor)
+                str = "ctor_" + parentName + "_";
+
             for (int i = 0; i < ps.Length; i++)
             {
                 str += i.ToString() + ps[i].Name + (ps[i].IsOut ? "_o" : "") + (ps[i].IsIn ? "_i" : "") + (ps[i].IsRetVal ? "_r" : "") + "_";
@@ -24,46 +28,35 @@ namespace MSIL2ASM
             return str;
         }
 
+        public static string GetMethodName(MethodDef info)
+        {
+            return GetMethodName(info.IsStatic, info.IsConstructor, GetTypeName(info.ParentType), info.Name, info.Parameters);
+        }
+
         public static string GetMethodName(MethodInfo info)
         {
-            var str = "mthd_" + (info.IsStatic ? "s_" : "") + GetTypeName(info.ReflectedType) + "_" + info.Name + "_";
-            
-            var ps = info.GetParameters();
-            for (int i = 0; i < ps.Length; i++)
-            {
-                str += i.ToString() + GetTypeName(ps[i].ParameterType) + (ps[i].IsOut ? "_o" : "") + (ps[i].IsIn ? "_i" : "") + (ps[i].IsRetval ? "_r" : "") + "_";
-            }
-
-            return str;
+            var p0 = ReflectionParser.ParseParams(info.GetParameters(), info.ReturnParameter, !info.IsStatic, false, info.ReflectedType.FullName, GetTypeName(info.ReflectedType));
+            return GetMethodName(info.IsStatic, false, GetTypeName(info.ReflectedType), info.Name, p0);
         }
 
         public static string GetMethodName(ConstructorInfo info)
         {
-            var str = "mthd_" + (info.IsStatic ? "s_" : "") + GetTypeName(info.ReflectedType) + "_" + info.Name + "_";
-
-            if (info.IsStatic && info.IsConstructor)
-                str = "cctor_" + GetTypeName(info.ReflectedType) + "_";
-            else if (info.IsConstructor)
-                str = "ctor_" + GetTypeName(info.ReflectedType) + "_";
-
-            var ps = info.GetParameters();
-            for (int i = 0; i < ps.Length; i++)
-            {
-                str += i.ToString() + GetTypeName(ps[i].ParameterType) + (ps[i].IsOut ? "_o" : "") + (ps[i].IsIn ? "_i" : "") + (ps[i].IsRetval ? "_r" : "") + "_";
-            }
-
-            return str;
+            var p0 = ReflectionParser.ParseParams(info.GetParameters(), null, !info.IsStatic, true, info.ReflectedType.FullName, GetTypeName(info.ReflectedType));
+            return GetMethodName(info.IsStatic, true, GetTypeName(info.ReflectedType), info.Name, p0);
         }
 
         public static string GetTypeName(TypeDef t)
         {
-            var str = t.FullName.Replace('.', '_').Replace("[]", "_$arr_");
+            var str = t.FullName.Replace('.', '_').Replace("`", "_$generic_").Replace("&", "_$addr").Replace("[]", "_$arr_");
             return str;
         }
 
         public static string GetTypeName(Type t)
         {
-            var str = t.FullName.Replace('.', '_').Replace("[]", "_$arr_");
+            if (t.FullName == null)
+                return t.Name + "_" + t.DeclaringType.FullName.Replace('.', '_').Replace("`", "_$generic_").Replace("&", "_$addr").Replace("[]", "$_arr_");
+
+            var str = t.FullName.Replace('.', '_').Replace("`", "_$generic_").Replace("&", "_$addr").Replace("[]", "_$arr_");
             return str;
         }
     }

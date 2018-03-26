@@ -216,11 +216,11 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
         {
             LinesAdd(";" + ln);
         }
-        
+
         #region Mov
         public void MovLabelAddressToRegister(AssemRegisters reg, string label)
         {
-            LinesAdd($"mov {RegisterName(reg)}, [{label}]");
+            LinesAdd($"mov {RegisterName(reg)}, {label}");
         }
 
         public void MovRegisterToRegisterRelativeAddress(AssemRegisters srcReg, AssemRegisters dstReg, int offset)
@@ -325,25 +325,23 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
             if (src_size > dst_size)
                 src_size = dst_size;
 
-            if (src != dst | src_size != dst_size)
+            if (src_size != dst_size)
             {
                 if (signed)
                     LinesAdd($"movsx {RegisterName(dst, dst_size)}, {RegisterName(src, src_size)}");
                 else
-                    LinesAdd($"movzx {RegisterName(dst, dst_size)}, {RegisterName(src, src_size)}");
+                {
+                    if (dst_size == 8 && src_size == 4)
+                    {
+                        MovConstantToRegister(0, dst);
+                        MovRegisterToRegisterSize(src, src_size, dst, src_size);
+                    }
+                    else
+                        LinesAdd($"movzx {RegisterName(dst, dst_size)}, {RegisterName(src, src_size)}");
+                }
             }
-        }
-
-        public void MovRegisterToRegisterSigned(AssemRegisters src, int src_sz, AssemRegisters dst, int dst_sz)
-        {
-            if (src != dst)
-                LinesAdd($"movsx {RegisterName(dst, dst_sz)}, {RegisterName(src, src_sz)}");
-        }
-
-        public void MovRegisterToRegisterUnsigned(AssemRegisters src, int src_sz, AssemRegisters dst, int dst_sz)
-        {
-            if (src != dst)
-                LinesAdd($"movzx {RegisterName(dst, dst_sz)}, {RegisterName(src, src_sz)}");
+            else if (src != dst)
+                MovRegisterToRegisterSize(src, src_size, dst, dst_size);
         }
 
         public void MovRegisterToRegisterAddressSize(AssemRegisters srcReg, AssemRegisters dstReg, int size)
@@ -405,20 +403,20 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
             if (src == 1)
                 LinesAdd($"inc {RegisterName(dst)}");
             else
-                LinesAdd($"add {RegisterName(dst)}, {src:X}");
+                LinesAdd($"add {RegisterName(dst)}, 0x{src:X}");
 
             MovRegisterToRegister(dst, dst0);
         }
 
-        public void Add(AssemRegisters src, AssemRegisters dst, AssemRegisters dst0)
+        public void Add(AssemRegisters src, int src_sz, AssemRegisters dst, int dst_sz, AssemRegisters dst0, int dst0_sz, bool sign)
         {
-            LinesAdd($"add {RegisterName(dst)}, {RegisterName(src)}");
-            MovRegisterToRegister(dst, dst0);
+            LinesAdd($"add {RegisterName(dst, dst_sz)}, {RegisterName(src, src_sz)}");
+            MovRegisterToRegisterSignSize(dst, dst_sz, dst0, dst0_sz, sign);
         }
 
         public void SubConst(ulong src, AssemRegisters dst, AssemRegisters dst0)
         {
-            LinesAdd($"sub {RegisterName(dst)}, {src}");
+            LinesAdd($"sub {RegisterName(dst)}, 0x{src:X}");
             MovRegisterToRegister(dst, dst0);
         }
 
@@ -435,7 +433,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
 
         public void MultiplyConst(ulong src, AssemRegisters dst, AssemRegisters dst0)
         {
-            LinesAdd($"imul {RegisterName(dst)}, {src}");
+            LinesAdd($"imul {RegisterName(dst)}, 0x{src:X}");
             MovRegisterToRegister(dst, dst0);
         }
 
@@ -447,7 +445,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
 
         public void AndConst(ulong src, AssemRegisters dst, AssemRegisters dst0)
         {
-            LinesAdd($"and {RegisterName(dst)}, {src}");
+            LinesAdd($"and {RegisterName(dst)}, 0x{src:X}");
             MovRegisterToRegister(dst, dst0);
         }
 
@@ -459,7 +457,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
 
         public void OrConst(ulong src, AssemRegisters dst, AssemRegisters dst0)
         {
-            LinesAdd($"or {RegisterName(dst)}, {src}");
+            LinesAdd($"or {RegisterName(dst)}, 0x{src:X}");
             MovRegisterToRegister(dst, dst0);
         }
 
@@ -471,7 +469,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
 
         public void XorConst(ulong src, AssemRegisters dst, AssemRegisters dst0)
         {
-            LinesAdd($"xor {RegisterName(dst)}, {src:X}");
+            LinesAdd($"xor {RegisterName(dst)}, 0x{src:X}");
             MovRegisterToRegister(dst, dst0);
         }
 
@@ -549,6 +547,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
             }
 
             LinesAdd($"{inst} {RegisterName(reg)}, cl");
+            MovRegisterToRegister(reg, dst_reg);
 
             if (amt_reg != AssemRegisters.Rcx)
             {
@@ -575,6 +574,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
             }
 
             LinesAdd($"{inst} {RegisterName(reg)}, {amt_reg}");
+            MovRegisterToRegister(reg, dst_reg);
         }
         #endregion
 
@@ -632,17 +632,17 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
         public void LoadEffectiveAddress(AssemRegisters src_reg, int offset, AssemRegisters dst_reg)
         {
             if (offset >= 0)
-                LinesAdd($"lea {RegisterName(dst_reg)}, {RegisterName(src_reg)} + {offset} ");
+                LinesAdd($"lea {RegisterName(dst_reg)}, [{RegisterName(src_reg)} + {offset}]");
             else
-                LinesAdd($"lea {RegisterName(dst_reg)}, {RegisterName(src_reg)} - {-offset} ");
+                LinesAdd($"lea {RegisterName(dst_reg)}, [{RegisterName(src_reg)} - {-offset}]");
         }
 
         public void LoadEffectiveMultAddress(AssemRegisters src_reg, AssemRegisters srcRegMult, int multiplier, int offset, AssemRegisters dst_reg)
         {
             if (offset >= 0)
-                LinesAdd($"lea {RegisterName(dst_reg)}, {RegisterName(src_reg)} + {RegisterName(srcRegMult)} * {multiplier} + {offset} ");
+                LinesAdd($"lea {RegisterName(dst_reg)}, [{RegisterName(src_reg)} + {RegisterName(srcRegMult)} * {multiplier} + {offset}]");
             else
-                LinesAdd($"lea {RegisterName(dst_reg)}, {RegisterName(src_reg)} + {RegisterName(srcRegMult)} * {multiplier}- {-offset} ");
+                LinesAdd($"lea {RegisterName(dst_reg)}, [{RegisterName(src_reg)} + {RegisterName(srcRegMult)} * {multiplier}- {-offset}]");
         }
 
         public void JmpRelativeLabel(int line)
@@ -750,7 +750,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
             }
         }
 
-        public void OutConst(AssemRegisters src_addr, AssemRegisters srcReg, int size)
+        public void OutConst(byte src_addr, AssemRegisters srcReg, int size)
         {
             if (srcReg != AssemRegisters.Rax)
             {
@@ -758,7 +758,7 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
                 MovRegisterToRegisterSize(srcReg, size, AssemRegisters.Rax, size);
             }
 
-            LinesAdd($"out {src_addr}, {RegisterName(AssemRegisters.Rax, size)}");
+            LinesAdd($"out 0x{src_addr:X}, {RegisterName(AssemRegisters.Rax, size)}");
 
             if (srcReg != AssemRegisters.Rax)
             {
@@ -768,14 +768,75 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
         #endregion
 
         #region In
-        public void In(int srcReg, int dstReg, int size)
+        public void In(AssemRegisters srcReg, AssemRegisters dstReg, int size)
         {
+            if (srcReg == AssemRegisters.Rax && dstReg == AssemRegisters.Rdx)
+            {
+                LinesAdd($"xchg rax, rdx");
+            }
+            else
+            {
+                if (srcReg == AssemRegisters.Rax)
+                {
+                    Push(AssemRegisters.Rdx);
+                    MovRegisterToRegisterSize(srcReg, 2, AssemRegisters.Rdx, 2);
+                }
 
+                if (dstReg != AssemRegisters.Rax)
+                {
+                    Push(AssemRegisters.Rax);
+                    MovRegisterToRegisterSize(dstReg, size, AssemRegisters.Rax, size);
+                }
+
+                if (srcReg != AssemRegisters.Rdx && srcReg != AssemRegisters.Rax)
+                {
+                    Push(AssemRegisters.Rdx);
+                    MovRegisterToRegisterSize(srcReg, 2, AssemRegisters.Rdx, 2);
+                }
+            }
+
+            LinesAdd($"in {RegisterName(AssemRegisters.Rax, size)}, {RegisterName(AssemRegisters.Rdx, 2)}");
+
+
+            //TODO review and fix following bit of code
+            if (srcReg == AssemRegisters.Rax && dstReg == AssemRegisters.Rdx)
+            {
+                LinesAdd($"xchg rax, rdx");
+            }
+            else
+            {
+                if (srcReg != AssemRegisters.Rdx && srcReg == AssemRegisters.Rax)
+                {
+                    Pop(AssemRegisters.Rdx);
+                }
+
+                if (dstReg != AssemRegisters.Rax)
+                {
+                    Pop(AssemRegisters.Rax);
+                }
+
+                if (srcReg != AssemRegisters.Rdx && srcReg != AssemRegisters.Rax)
+                {
+                    Pop(AssemRegisters.Rdx);
+                }
+            }
         }
 
-        public void InConst(int src_addr, int dstReg, int size)
+        public void InConst(int src_addr, AssemRegisters dstReg, int size)
         {
+            if (dstReg != AssemRegisters.Rax)
+            {
+                Push(AssemRegisters.Rax);
+                MovRegisterToRegisterSize(dstReg, size, AssemRegisters.Rax, size);
+            }
 
+            LinesAdd($"in {RegisterName(AssemRegisters.Rax, size)}, 0x{src_addr:X}");
+            MovRegisterToRegisterSize(AssemRegisters.Rax, size, dstReg, size);
+
+            if (dstReg != AssemRegisters.Rax)
+            {
+                Pop(AssemRegisters.Rax);
+            }
         }
         #endregion
 
@@ -869,54 +930,54 @@ namespace MSIL2ASM.x86_64.Nasm.Assembly
         #endregion
 
         #region Conditional Cmp
-        public void CmpEqRelativeLabel(AssemRegisters line, int sz)
+        public void CmpEqRelativeLabel(AssemRegisters line)
         {
-            LinesAdd($"sete {RegisterName(line, sz)}");
+            LinesAdd($"sete {RegisterName(line, 1)}");
         }
 
-        public void CmpNeRelativeLabel(AssemRegisters line, int sz)
+        public void CmpNeRelativeLabel(AssemRegisters line)
         {
-            LinesAdd($"setne {RegisterName(line, sz)}");
+            LinesAdd($"setne {RegisterName(line, 1)}");
         }
 
-        public void CmpLtRelativeLabel(AssemRegisters line, int sz)
+        public void CmpLtRelativeLabel(AssemRegisters line)
         {
-            LinesAdd($"setl {RegisterName(line, sz)}");
+            LinesAdd($"setl {RegisterName(line, 1)}");
         }
 
-        public void CmpGtRelativeLabel(AssemRegisters line, int sz)
+        public void CmpGtRelativeLabel(AssemRegisters line)
         {
-            LinesAdd($"setg {RegisterName(line, sz)}");
+            LinesAdd($"setg {RegisterName(line, 1)}");
         }
 
-        public void CmpLeRelativeLabel(AssemRegisters line, int sz)
+        public void CmpLeRelativeLabel(AssemRegisters line)
         {
-            LinesAdd($"setle {RegisterName(line, sz)}");
+            LinesAdd($"setle {RegisterName(line, 1)}");
         }
 
-        public void CmpGeRelativeLabel(AssemRegisters line, int sz)
+        public void CmpGeRelativeLabel(AssemRegisters line)
         {
-            LinesAdd($"setge {RegisterName(line, sz)}");
+            LinesAdd($"setge {RegisterName(line, 1)}");
         }
 
-        public void CmpLtUnRelativeLabel(AssemRegisters line, int sz)
+        public void CmpLtUnRelativeLabel(AssemRegisters line)
         {
-            LinesAdd($"setb {RegisterName(line, sz)}");
+            LinesAdd($"setb {RegisterName(line, 1)}");
         }
 
-        public void CmpGtUnRelativeLabel(AssemRegisters line, int sz)
+        public void CmpGtUnRelativeLabel(AssemRegisters line)
         {
-            LinesAdd($"seta {RegisterName(line, sz)}");
+            LinesAdd($"seta {RegisterName(line, 1)}");
         }
 
-        public void CmpLeUnRelativeLabel(AssemRegisters line, int sz)
+        public void CmpLeUnRelativeLabel(AssemRegisters line)
         {
-            LinesAdd($"setbe {RegisterName(line, sz)}");
+            LinesAdd($"setbe {RegisterName(line, 1)}");
         }
 
-        public void CmpGeUnRelativeLabel(AssemRegisters line, int sz)
+        public void CmpGeUnRelativeLabel(AssemRegisters line)
         {
-            LinesAdd($"setae {RegisterName(line, sz)}");
+            LinesAdd($"setae {RegisterName(line, 1)}");
         }
         #endregion
 

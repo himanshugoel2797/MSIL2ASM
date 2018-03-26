@@ -26,7 +26,21 @@ namespace MSIL2ASM.x86_64.Nasm
 
         public void AddString(string str, int idx)
         {
-            data.Add(prefix + "_str" + idx.ToString() + " : db '" + str + "'");
+            var s = Encoding.UTF8.GetBytes(str);
+            data.Add($"dd 0x{s.Length:X}");
+
+            var line = prefix + "_str" + idx.ToString() + " : db ";
+            for (int i = 0; i < s.Length; i++)
+            {
+                if (s[i] < 128)
+                    line += $"'{(char)s[i]}'";
+                else
+                    line += $"0x{s[i]:X}";
+
+                if (i < s.Length - 1)
+                    line += ",";
+            }
+            data.Add(line);
         }
 
         public string GetStringLabel(int idx)

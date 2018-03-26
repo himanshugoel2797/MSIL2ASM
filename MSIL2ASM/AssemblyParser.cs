@@ -22,6 +22,7 @@ namespace MSIL2ASM
             //Add all the types in this assembly.
             List<TypeDef> backends = new List<TypeDef>();
             var dict_realType = new Dictionary<Type, Type>();
+            var dict_mapping = new Dictionary<string, TypeDef>();
 
             if (!Directory.Exists(outputDir))
                 Directory.CreateDirectory(outputDir);
@@ -42,10 +43,10 @@ namespace MSIL2ASM
                     dict_realType[t] = t;
             }
 
-            foreach (KeyValuePair<Type, Type> t in CoreLib.CorlibMapping.TypeMappings)
+            foreach (KeyValuePair<Type, Type> t in Mapping.CorlibMapping.TypeMappings)
                 dict_realType[t.Key] = t.Value;
 
-            foreach (Type t in CoreLib.CorlibMapping.IgnoreTypes)
+            foreach (Type t in Mapping.CorlibMapping.IgnoreTypes)
                 if (dict_realType.ContainsKey(t))
                     dict_realType.Remove(t);
 
@@ -55,8 +56,13 @@ namespace MSIL2ASM
             {
                 var tDef = ReflectionParser.Parse(t.Key, t.Value);
                 if (!backends.Contains(tDef))
+                {
                     backends.Add(tDef);
+                    dict_mapping[t.Key.FullName] = tDef;
+                }
             }
+
+            ReflectionParser.Reinit(dict_mapping);
 
             foreach (TypeDef t in backends)
             {

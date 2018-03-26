@@ -20,6 +20,11 @@ namespace MSIL2ASM.Builtins
 
         public static int Block0_CollectionCount = 0;
 
+        static MemoryManager()
+        {
+
+        }
+
         private static void TriggerCollectionBlock0()
         {
 

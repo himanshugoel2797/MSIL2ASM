@@ -8,17 +8,17 @@ namespace MSIL2ASM.CoreLib
 {
     public class ValueType
     {
-        public virtual string ToString()
+        public override string ToString()
         {
             return "Test";
         }
 
-        public virtual bool Equals(object obj)
+        public override bool Equals(object obj)
         {
             return false;
         }
 
-        public virtual int GetHashCode()
+        public override int GetHashCode()
         {
             return 0;
         }

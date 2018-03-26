@@ -66,7 +66,6 @@ namespace MSIL2ASM.x86_64.Nasm
                     return OptimizationInstruction.Branch;
 
                 case InstructionTypes.Call:
-                case InstructionTypes.Calli:
                     return OptimizationInstruction.Call;
 
                 case InstructionTypes.CallVirt:
@@ -90,6 +89,8 @@ namespace MSIL2ASM.x86_64.Nasm
                     return OptimizationInstruction.Dup;
 
                 case InstructionTypes.Multiply:
+                case InstructionTypes.MultiplyCheckOverflow:
+                case InstructionTypes.UMultiplyCheckOverflow:
                     return OptimizationInstruction.Mul;
 
                 case InstructionTypes.Neg:
@@ -97,6 +98,10 @@ namespace MSIL2ASM.x86_64.Nasm
 
                 case InstructionTypes.Not:
                     return OptimizationInstruction.Not;
+
+                case InstructionTypes.Newarr:
+                case InstructionTypes.Newobj:
+                    return OptimizationInstruction.New;
 
                 case InstructionTypes.Or:
                     return OptimizationInstruction.Or;
@@ -201,6 +206,12 @@ namespace MSIL2ASM.x86_64.Nasm
                 case InstructionTypes.Ldtoken:
                     return OptimizationInstructionSubType.Token;
 
+                case InstructionTypes.Newarr:
+                    return OptimizationInstructionSubType.Array;
+
+                case InstructionTypes.Newobj:
+                    return OptimizationInstructionSubType.Object;
+
                 case InstructionTypes.Add:
                 case InstructionTypes.And:
                 case InstructionTypes.Divide:
@@ -217,6 +228,7 @@ namespace MSIL2ASM.x86_64.Nasm
 
                 case InstructionTypes.AddCheckOverflow:
                 case InstructionTypes.SubtractCheckOverflow:
+                case InstructionTypes.MultiplyCheckOverflow:
                     return OptimizationInstructionSubType.CheckOverflow;
 
                 case InstructionTypes.UDivide:
@@ -226,6 +238,7 @@ namespace MSIL2ASM.x86_64.Nasm
 
                 case InstructionTypes.UAddCheckOverflow:
                 case InstructionTypes.USubtractCheckOverflow:
+                case InstructionTypes.UMultiplyCheckOverflow:
                     return OptimizationInstructionSubType.Unsigned | OptimizationInstructionSubType.CheckOverflow;
 
                 case InstructionTypes.Ceq:
@@ -277,9 +290,6 @@ namespace MSIL2ASM.x86_64.Nasm
 
                 case InstructionTypes.CallVirt:
                     return OptimizationInstructionSubType.None;
-
-                case InstructionTypes.Calli:
-                    return OptimizationInstructionSubType.Indirect;
 
                 case InstructionTypes.Convert:
                     return OptimizationInstructionSubType.None;
@@ -336,11 +346,13 @@ namespace MSIL2ASM.x86_64.Nasm
                             {
                                 ParameterLocation = OptimizationParameterLocation.Index,
                                 Value = (ulong)tkn.Parameters[0],
+                                Size = tkn.ParameterSizes[0],
                             },
                             new OptimizationParameter()
                             {
                                 ParameterLocation = OptimizationParameterLocation.Index,
                                 Value = (ulong)tkn.Parameters[1],
+                                Size = tkn.ParameterSizes[1],
                             }
                         };
 
@@ -456,12 +468,14 @@ namespace MSIL2ASM.x86_64.Nasm
                             new OptimizationParameter()
                             {
                                 ParameterLocation = OptimizationParameterLocation.Index,
-                                Value = (ulong)tkn.Parameters[0]
+                                Value = (ulong)tkn.Parameters[0],
+                                Size = tkn.ParameterSizes[0],
                             },
                             new OptimizationParameter()
                             {
                                 ParameterLocation = OptimizationParameterLocation.Index,
-                                Value = (ulong)tkn.Parameters[1]
+                                Value = (ulong)tkn.Parameters[1],
+                                Size = tkn.ParameterSizes[1],
                             },
                         };
 
@@ -471,7 +485,7 @@ namespace MSIL2ASM.x86_64.Nasm
                             {
                                 ParameterLocation = OptimizationParameterLocation.Result,
                                 ParameterType = OptimizationParameterType.Integer,
-                                Size = 4,
+                                Size = 1,
                             }
                         };
                     }
@@ -480,7 +494,6 @@ namespace MSIL2ASM.x86_64.Nasm
 
                 #region Call Functions
                 case InstructionTypes.Call:
-                case InstructionTypes.Calli:
                 case InstructionTypes.CallVirt:
                 case InstructionTypes.CallVirtConstrained:
                     {
@@ -492,7 +505,8 @@ namespace MSIL2ASM.x86_64.Nasm
                             {
                                 ParameterLocation = OptimizationParameterLocation.Index,
                                 ParameterType = OptimizationParameterType.Unknown,
-                                Value = (ulong)tkn.Parameters[i]
+                                Value = (ulong)tkn.Parameters[i],
+                                Size = tkn.ParameterSizes[i],
                             };
                         }
 
@@ -522,6 +536,7 @@ namespace MSIL2ASM.x86_64.Nasm
                                 ParameterLocation = OptimizationParameterLocation.Index,
                                 ParameterType = OptimizationParameterType.Unknown,
                                 Value = (ulong)tkn.Parameters[0],
+                                Size = tkn.ParameterSizes[0],
                             }
                         };
 
@@ -588,6 +603,7 @@ namespace MSIL2ASM.x86_64.Nasm
                                 ParameterLocation = OptimizationParameterLocation.Index,
                                 ParameterType = OptimizationParameterType.Unknown,
                                 Value = (ulong)tkn.Parameters[0],
+                                Size = tkn.ParameterSizes[0],
                             }
                         };
 
@@ -596,12 +612,14 @@ namespace MSIL2ASM.x86_64.Nasm
                             new OptimizationParameter()
                             {
                                 ParameterLocation = OptimizationParameterLocation.Result,
-                                ParameterType = OptimizationParameterType.Unknown
+                                ParameterType = OptimizationParameterType.Unknown,
+                                Size = tkn.ParameterSizes[0],
                             },
                             new OptimizationParameter()
                             {
                                 ParameterLocation = OptimizationParameterLocation.Result,
-                                ParameterType = OptimizationParameterType.Unknown
+                                ParameterType = OptimizationParameterType.Unknown,
+                                Size = tkn.ParameterSizes[0],
                             }
                         };
                     }
@@ -620,7 +638,7 @@ namespace MSIL2ASM.x86_64.Nasm
                             {
                                 ParameterLocation = OptimizationParameterLocation.Result,
                                 ParameterType = OptimizationParameterType.Unknown,
-                                Size = MachineSpec.PointerSize,
+                                Size = tkn.RetValSz,
                             }
                         };
                     }
@@ -670,7 +688,7 @@ namespace MSIL2ASM.x86_64.Nasm
                             new OptimizationParameter()
                             {
                                 ParameterLocation = OptimizationParameterLocation.Result,
-                                ParameterType = OptimizationParameterType.Unknown
+                                ParameterType = OptimizationParameterType.Unknown,
                             },
                         };
 
@@ -707,7 +725,7 @@ namespace MSIL2ASM.x86_64.Nasm
                             new OptimizationParameter()
                             {
                                 ParameterLocation = OptimizationParameterLocation.Result,
-                                ParameterType = OptimizationParameterType.Unknown
+                                ParameterType = OptimizationParameterType.Unknown,
                             },
                            };
                     }
@@ -720,7 +738,8 @@ namespace MSIL2ASM.x86_64.Nasm
                             new OptimizationParameter()
                             {
                                 ParameterLocation = OptimizationParameterLocation.Result,
-                                ParameterType = OptimizationParameterType.ManagedPointer
+                                ParameterType = OptimizationParameterType.ManagedPointer,
+                                Size = MachineSpec.PointerSize,
                             },
                            };
                     }
@@ -842,6 +861,7 @@ namespace MSIL2ASM.x86_64.Nasm
                                 ParameterLocation = OptimizationParameterLocation.Index,
                                 ParameterType = OptimizationParameterType.ManagedPointer,
                                 Value = (ulong)tkn.Parameters[0],
+                                Size = tkn.ParameterSizes[0],
                             }
                         };
 
@@ -851,6 +871,7 @@ namespace MSIL2ASM.x86_64.Nasm
                             {
                                 ParameterLocation = OptimizationParameterLocation.Result,
                                 ParameterType = OptimizationParameterType.Unknown,
+                                Size = tkn.RetValSz,
                             }
                         };
                     }
@@ -865,6 +886,7 @@ namespace MSIL2ASM.x86_64.Nasm
                                 ParameterLocation = OptimizationParameterLocation.Index,
                                 ParameterType = OptimizationParameterType.ManagedPointer,
                                 Value = (ulong)tkn.Parameters[0],
+                                Size = tkn.ParameterSizes[0],
                             }
                         };
 
@@ -874,6 +896,7 @@ namespace MSIL2ASM.x86_64.Nasm
                             {
                                 ParameterLocation = OptimizationParameterLocation.Result,
                                 ParameterType = OptimizationParameterType.ManagedPointer,
+                                Size = MachineSpec.PointerSize,
                             }
                         };
                     }
@@ -881,6 +904,30 @@ namespace MSIL2ASM.x86_64.Nasm
                 #endregion
                 //case InstructionTypes.Leave:
                 //case InstructionTypes.LocAlloc:
+                case InstructionTypes.Newarr:
+                    {
+                        oTkn.Constants = new ulong[] { (ulong)tkn.RetValSz };
+                        oTkn.Parameters = new OptimizationParameter[]
+                        {
+                            new OptimizationParameter()
+                            {
+                                ParameterLocation = OptimizationParameterLocation.Index,
+                                ParameterType = OptimizationParameterType.Integer,
+                                Size = 8,
+                            }
+                        };
+
+                        oTkn.Results = new OptimizationParameter[]
+                        {
+                            new OptimizationParameter()
+                            {
+                                ParameterLocation = OptimizationParameterLocation.Result,
+                                ParameterType = OptimizationParameterType.ManagedPointer,
+                                Size = 8,
+                            }
+                        };
+                    }
+                    break;
                 case InstructionTypes.Pop:
                     {
                         oTkn.Parameters = new OptimizationParameter[]
@@ -890,6 +937,7 @@ namespace MSIL2ASM.x86_64.Nasm
                                 ParameterLocation = OptimizationParameterLocation.Index,
                                 ParameterType = OptimizationParameterType.Unknown,
                                 Value = (ulong)tkn.Parameters[0],
+                                Size = tkn.ParameterSizes[0],
                             }
                         };
                     }
@@ -904,7 +952,7 @@ namespace MSIL2ASM.x86_64.Nasm
                                     ParameterLocation = OptimizationParameterLocation.Index,
                                     ParameterType = OptimizationParameterType.Unknown,
                                     Value = (ulong)tkn.Parameters[0],
-                                    Size = MachineSpec.PointerSize,
+                                    Size = tkn.RetValSz,
                                 }
                             };
                     }
@@ -936,7 +984,7 @@ namespace MSIL2ASM.x86_64.Nasm
                                 ParameterLocation = OptimizationParameterLocation.Index,
                                 ParameterType = OptimizationParameterType.Unknown,
                                 Value = (ulong)tkn.Parameters[0],
-                                Size = MachineSpec.PointerSize,
+                                Size = tkn.ParameterSizes[0],
                             }
                         };
                     }
@@ -951,12 +999,14 @@ namespace MSIL2ASM.x86_64.Nasm
                                 ParameterLocation = OptimizationParameterLocation.Index,
                                 ParameterType = OptimizationParameterType.Unknown,
                                 Value = (ulong)tkn.Parameters[0],
+                                Size = tkn.ParameterSizes[0],
                             },
                             new OptimizationParameter()
                             {
                                 ParameterLocation = OptimizationParameterLocation.Index,
                                 ParameterType = OptimizationParameterType.Unknown,
                                 Value = (ulong)tkn.Parameters[1],
+                                Size = tkn.ParameterSizes[1],
                             },
                         };
 
@@ -995,6 +1045,7 @@ namespace MSIL2ASM.x86_64.Nasm
                                 ParameterLocation = OptimizationParameterLocation.Index,
                                 ParameterType = OptimizationParameterType.Unknown,
                                 Value = (ulong)tkn.Parameters[0],
+                                Size = tkn.ParameterSizes[0],
                             }
                         };
                     }
@@ -1009,12 +1060,14 @@ namespace MSIL2ASM.x86_64.Nasm
                                 ParameterLocation = OptimizationParameterLocation.Index,
                                 ParameterType = OptimizationParameterType.Unknown,
                                 Value = (ulong)tkn.Parameters[0],
+                                Size = tkn.ParameterSizes[0],
                             },
                             new OptimizationParameter()
                             {
                                 ParameterLocation = OptimizationParameterLocation.Index,
                                 ParameterType = OptimizationParameterType.ManagedPointer,
                                 Value = (ulong)tkn.Parameters[0],
+                                Size = tkn.ParameterSizes[0],
                             },
                         };
                     }
@@ -1042,11 +1095,11 @@ namespace MSIL2ASM.x86_64.Nasm
                     {
                         oTkn.ParameterRegisters = new Assembly.AssemRegisters[]
                         {
-                            Assembly.AssemRegisters.Any | Assembly.AssemRegisters.Const,
+                            Assembly.AssemRegisters.Any,
                         };
                         oTkn.ResultRegisters = new Assembly.AssemRegisters[]
                         {
-                            Assembly.AssemRegisters.Rax
+                            Assembly.AssemRegisters.Any
                         };
                         oTkn.ThunkRegisters = new Assembly.AssemRegisters[0];
                     }
@@ -1104,6 +1157,10 @@ namespace MSIL2ASM.x86_64.Nasm
                     }
                     break;
                 case InstructionTypes.Add:
+                case InstructionTypes.And:
+                case InstructionTypes.Or:
+                case InstructionTypes.Subtract:
+                case InstructionTypes.Multiply:
                 case InstructionTypes.Xor:
                     {
                         oTkn.ParameterRegisters = new Assembly.AssemRegisters[]
@@ -1116,6 +1173,46 @@ namespace MSIL2ASM.x86_64.Nasm
                             Assembly.AssemRegisters.Any
                         };
                         oTkn.ThunkRegisters = new Assembly.AssemRegisters[0];
+                    }
+                    break;
+                case InstructionTypes.Call:
+                    {
+                        switch (oTkn.Strings[0])
+                        {
+                            //case "mthd_s_MSIL2ASM_Builtins_x86_64_Halt_":
+
+                            //    break;
+                            case "mthd_s_MSIL2ASM_Builtins_x86_64_Out_0System_UInt16_1System_UInt32_2System_Void_r_":
+                            case "mthd_s_MSIL2ASM_Builtins_x86_64_Out_0System_UInt16_1System_Int32_2System_Void_r_":
+                            case "mthd_s_MSIL2ASM_Builtins_x86_64_Out_0System_UInt16_1System_UInt16_2System_Void_r_":
+                            case "mthd_s_MSIL2ASM_Builtins_x86_64_Out_0System_UInt16_1System_Int16_2System_Void_r_":
+                            case "mthd_s_MSIL2ASM_Builtins_x86_64_Out_0System_UInt16_1System_Byte_2System_Void_r_":
+                            case "mthd_s_MSIL2ASM_Builtins_x86_64_Out_0System_UInt16_1System_SByte_2System_Void_r_":
+                            case "mthd_s_MSIL2ASM_Builtins_x86_64_In_0System_UInt16_1System_UInt32_$addr_o_2System_Void_r_":
+                            case "mthd_s_MSIL2ASM_Builtins_x86_64_In_0System_UInt16_1System_UInt16_$addr_o_2System_Void_r_":
+                            case "mthd_s_MSIL2ASM_Builtins_x86_64_In_0System_UInt16_1System_Byte_$addr_o_2System_Void_r_":
+                            case "mthd_s_MSIL2ASM_Builtins_x86_64_In_0System_UInt16_1System_Int32_$addr_o_2System_Void_r_":
+                            case "mthd_s_MSIL2ASM_Builtins_x86_64_In_0System_UInt16_1System_Int16_$addr_o_2System_Void_r_":
+                            case "mthd_s_MSIL2ASM_Builtins_x86_64_In_0System_UInt16_1System_SByte_$addr_o_2System_Void_r_":
+                                oTkn.ParameterRegisters = new Assembly.AssemRegisters[]
+                                {
+                                    Assembly.AssemRegisters.Rdx | Assembly.AssemRegisters.Const8,
+                                    Assembly.AssemRegisters.Rax,
+                                };
+                                oTkn.ResultRegisters = new Assembly.AssemRegisters[0];
+                                oTkn.ThunkRegisters = new Assembly.AssemRegisters[0];
+                                break;
+                            default:
+                                oTkn.ThunkRegisters = new Assembly.AssemRegisters[0];
+                                oTkn.ParameterRegisters = new Assembly.AssemRegisters[oTkn.Parameters.Length];
+                                oTkn.ResultRegisters = new Assembly.AssemRegisters[oTkn.Results.Length];
+                                for (int i = 0; i < oTkn.Parameters.Length; i++)
+                                    oTkn.ParameterRegisters[i] = Assembly.AssemRegisters.Any;
+
+                                for (int i = 0; i < oTkn.Results.Length; i++)
+                                    oTkn.ResultRegisters[i] = Assembly.AssemRegisters.Any;
+                                break;
+                        }
                     }
                     break;
                 default:

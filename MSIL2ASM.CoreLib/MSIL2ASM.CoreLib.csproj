@@ -43,11 +43,24 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AliasAttribute.cs" />
-    <Compile Include="Attribute.cs" />
+    <Compile Include="Core\Attribute.cs" />
+    <Compile Include="Core\Boolean.cs" />
+    <Compile Include="Core\Char.cs" />
+    <Compile Include="Core\Delegate.cs" />
+    <Compile Include="Core\SByte.cs" />
+    <Compile Include="Core\Byte.cs" />
+    <Compile Include="Core\Type.cs" />
+    <Compile Include="Core\UInt16.cs" />
+    <Compile Include="Core\UInt32.cs" />
+    <Compile Include="Core\UInt64.cs" />
+    <Compile Include="Core\Void.cs" />
     <Compile Include="CorlibMapping.cs" />
-    <Compile Include="String.cs" />
-    <Compile Include="ValueType.cs" />
-    <Compile Include="Object.cs" />
+    <Compile Include="Core\Int16.cs" />
+    <Compile Include="Core\Int32.cs" />
+    <Compile Include="Core\Int64.cs" />
+    <Compile Include="Core\String.cs" />
+    <Compile Include="Core\ValueType.cs" />
+    <Compile Include="Core\Object.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

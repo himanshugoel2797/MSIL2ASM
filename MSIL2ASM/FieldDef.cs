@@ -12,6 +12,8 @@ namespace MSIL2ASM
 
         public TypeDef ParameterType { get; set; }
 
+        public int Index { get; set; }
+
         public bool IsIn { get; set; }
         public bool IsOut { get; set; }
         public bool IsRetVal { get; set; }
@@ -33,6 +35,7 @@ namespace MSIL2ASM
     public class MethodDef
     {
         public string Name { get; set; }
+        public List<string> Aliases { get; set; }
 
         public bool IsConstructor { get; set; }
         public bool IsStatic { get; set; }
@@ -60,6 +63,8 @@ namespace MSIL2ASM
         public int StaticSize { get; set; }
 
         public bool IsValueType { get; set; }
+        public bool IsGenericParameter { get; set; }
+        public bool IsGenericType { get; set; }
 
         public MethodDef[] InstanceMethods { get; set; }
         public FieldDef[] InstanceFields { get; set; }

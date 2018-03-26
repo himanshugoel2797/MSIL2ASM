@@ -14,6 +14,7 @@ namespace MSIL2ASM
         public int ID;
         public int InstructionOffset;
         public int[] Parameters;
+        public int[] ParameterSizes;
         public ulong[] Constants;
         public string String;
         public int RetValSz;
@@ -161,9 +162,9 @@ namespace MSIL2ASM
                 {
                     tkn.Constants = new ulong[] { (ulong)OperandTypes.I4, val };
                 }
-                else if (parts[2] == "M1")
+                else if (parts[2] == "m1")
                 {
-                    tkn.Constants = new ulong[] { (ulong)OperandTypes.I4, unchecked((ulong)-1) };
+                    tkn.Constants = new ulong[] { (ulong)OperandTypes.I4, unchecked((uint)-1) };
                 }
                 else if (parts[2] == "s")
                 {
@@ -409,6 +410,8 @@ namespace MSIL2ASM
 
         private void NewobjOpCode(ILStream instructions, OpCode opc, InstructionTypes newobj)
         {
+            //TODO: Detect generic type creations and pass them back for resolution
+
             //allocate the object, call the constructor
             var mthd = (ConstructorInfo)module.ResolveMethod((int)instructions.GetParameter(0));
             var @params = mthd.GetParameters();
@@ -879,6 +882,17 @@ namespace MSIL2ASM
             oStack.Push(tkn.ID);
         }
 
+        private void IsInstOpCode(ILStream instructions, OpCode opc, InstructionTypes types)
+        {
+            var tkn = new SSAToken()
+            {
+                Operation = types,
+                Parameters = new int[] { oStack.Pop() },
+                InstructionOffset = instructions.CurrentOffset,
+            };
+            oStack.Push(tkn.ID);
+        }
+
         public void Initialize()
         {
             //Parse the code and generate the SSA form instruction stream
@@ -891,6 +905,10 @@ namespace MSIL2ASM
                 if (new OpCode[] { OpCodes.Ldarg_0, OpCodes.Ldarg_1, OpCodes.Ldarg_2, OpCodes.Ldarg_3, OpCodes.Ldarg, OpCodes.Ldarg_S }.Contains(opc))
                 {
                     EncodedCountOpCode(instructions, opc, InstructionTypes.LdArg);
+                }
+                else if (new OpCode[] { OpCodes.Ldarga, OpCodes.Ldarga_S }.Contains(opc))
+                {
+                    EncodedCountOpCode(instructions, opc, InstructionTypes.LdArga);
                 }
                 else if (new OpCode[] { OpCodes.Starg, OpCodes.Starg_S }.Contains(opc))
                 {
@@ -1132,10 +1150,6 @@ namespace MSIL2ASM
                 {
                     CompareOpCode(instructions, opc, InstructionTypes.CltUn);
                 }
-                else if (opc == OpCodes.Ckfinite)
-                {
-                    throw new Exception("Ckfinite");
-                }
                 else if (opc == OpCodes.Switch)
                 {
                     SwitchOpCode(instructions, opc, InstructionTypes.Switch);
@@ -1196,22 +1210,6 @@ namespace MSIL2ASM
                 {
                     LdLocaOpCode(instructions, opc, InstructionTypes.LdLoca);
                 }
-                else if (opc == OpCodes.Cpblk)
-                {
-                    CpBlkOpCode(instructions, opc, InstructionTypes.CpBlk);
-                }
-                else if (opc == OpCodes.Endfilter)
-                {
-                    EndFilterOpCode(instructions, opc, InstructionTypes.EndFilter);
-                }
-                else if (opc == OpCodes.Initblk)
-                {
-                    InitBlkOpCode(instructions, opc, InstructionTypes.InitBlk);
-                }
-                else if (opc == OpCodes.Jmp)
-                {
-                    JmpOpCode(instructions, opc, InstructionTypes.Jmp);
-                }
                 else if (opc == OpCodes.Localloc)
                 {
                     LocallocOpCode(instructions, opc, InstructionTypes.Localloc);
@@ -1219,6 +1217,10 @@ namespace MSIL2ASM
                 else if (opc == OpCodes.Ldftn)
                 {
                     LdFtnOpCode(instructions, opc, InstructionTypes.Ldftn);
+                }
+                else if (opc == OpCodes.Isinst)
+                {
+                    IsInstOpCode(instructions, opc, InstructionTypes.IsInst);
                 }
                 else if (opc == OpCodes.Constrained)
                 {
@@ -1236,6 +1238,8 @@ namespace MSIL2ASM
             for (int i = 0; i < SSAToken.Tokens.Count; i++)
             {
                 var cur_tkn = SSAToken.Tokens[i];
+                if (cur_tkn.ParameterSizes == null && cur_tkn.Parameters != null)
+                    cur_tkn.ParameterSizes = new int[cur_tkn.Parameters.Length];
 
                 if (new InstructionTypes[] { }.Contains(cur_tkn.Operation))
                 {
@@ -1260,10 +1264,11 @@ namespace MSIL2ASM
                     case InstructionTypes.Ldsfld:
                     case InstructionTypes.Stsfld:
                         {
+                            var mDataTkn = module.ResolveField((int)Tokens[i].Constants[0]).MetadataToken;
                             for (int j = 0; j < list.Count; j++)
                                 for (int k = 0; k < list[j].StaticFields.Length; k++)
                                 {
-                                    if (list[j].StaticFields[k].MetadataToken == (int)Tokens[i].Constants[0])
+                                    if (list[j].StaticFields[k].MetadataToken == mDataTkn)
                                     {
                                         Tokens[i].String = MachineSpec.GetTypeName(list[j]);
                                         Tokens[i].Constants[0] = (ulong)list[j].StaticFields[k].Offset;
@@ -1279,10 +1284,11 @@ namespace MSIL2ASM
                     case InstructionTypes.Ldfld:
                     case InstructionTypes.Stfld:
                         {
+                            var mDataTkn = module.ResolveField((int)Tokens[i].Constants[0]).MetadataToken;
                             for (int j = 0; j < list.Count; j++)
                                 for (int k = 0; k < list[j].InstanceFields.Length; k++)
                                 {
-                                    if (list[j].InstanceFields[k].MetadataToken == (int)Tokens[i].Constants[0])
+                                    if (list[j].InstanceFields[k].MetadataToken == mDataTkn)
                                     {
                                         Tokens[i].String = MachineSpec.GetTypeName(list[j]);
                                         Tokens[i].Constants[0] = (ulong)list[j].InstanceFields[k].Offset;
@@ -1291,11 +1297,324 @@ namespace MSIL2ASM
                                 }
 
                             if (string.IsNullOrEmpty(Tokens[i].String))
+                            {
+                                throw new Exception();
+                            }
+                        }
+                        break;
+                    case InstructionTypes.LdArg:
+                        {
+                            bool resolved = false;
+                            for (int j = 0; j < list.Count; j++)
+                            {
+                                for (int k = 0; k < list[j].StaticMethods.Length; k++)
+                                {
+                                    if (list[j].StaticMethods[k].ByteCode == this)
+                                    {
+                                        var arg = list[j].StaticMethods[k].Parameters[Tokens[i].Constants[0]];
+
+                                        switch (arg.ParameterType.FullName)
+                                        {
+                                            case "System.Int32":
+                                            case "System.UInt32":
+                                                Tokens[i].RetValSz = 4;
+                                                break;
+                                            case "System.Int64":
+                                            case "System.UInt64":
+                                            case "System.IntPtr":
+                                                Tokens[i].RetValSz = 8;
+                                                break;
+                                            case "System.Int16":
+                                            case "System.UInt16":
+                                                Tokens[i].RetValSz = 2;
+                                                break;
+                                            case "System.SByte":
+                                            case "System.Byte":
+                                                Tokens[i].RetValSz = 1;
+                                                break;
+                                            default:
+                                                Tokens[i].RetValSz = 8;
+                                                break;
+                                        }
+                                        resolved = true;
+                                        break;
+                                    }
+                                }
+                                if (resolved)
+                                    break;
+
+                                for (int k = 0; k < list[j].InstanceMethods.Length; k++)
+                                {
+                                    if (list[j].InstanceMethods[k].ByteCode == this)
+                                    {
+                                        var arg = list[j].InstanceMethods[k].Parameters[Tokens[i].Constants[0]];
+
+                                        switch (arg.ParameterType.FullName)
+                                        {
+                                            case "System.Int32":
+                                            case "System.UInt32":
+                                                Tokens[i].RetValSz = 4;
+                                                break;
+                                            case "System.Int64":
+                                            case "System.UInt64":
+                                            case "System.IntPtr":
+                                                Tokens[i].RetValSz = 8;
+                                                break;
+                                            case "System.Int16":
+                                            case "System.UInt16":
+                                                Tokens[i].RetValSz = 2;
+                                                break;
+                                            case "System.SByte":
+                                            case "System.Byte":
+                                                Tokens[i].RetValSz = 1;
+                                                break;
+                                            default:
+                                                Tokens[i].RetValSz = 8;
+                                                break;
+                                        }
+                                        resolved = true;
+                                        break;
+                                    }
+                                }
+                                if (resolved)
+                                    break;
+                            }
+                            if (!resolved)
+                                throw new Exception();
+                        }
+                        break;
+                    case InstructionTypes.Newarr:
+                        {
+                            var mDataTkn = module.ResolveType((int)Tokens[i].Constants[0]).MetadataToken;
+                            for (int j = 0; j < list.Count; j++)
+                                if (list[j].MetadataToken == mDataTkn)
+                                {
+                                    if (list[j].IsValueType)
+                                        Tokens[i].RetValSz = list[j].InstanceSize;
+                                    else
+                                        Tokens[i].RetValSz = MachineSpec.PointerSize;
+
+                                    break;
+                                }
+
+                            if (Tokens[i].RetValSz == 0)
                                 throw new Exception();
                         }
                         break;
                 }
             }
+
+            AssignSizes();
+        }
+
+        private void AssignSizes()
+        {
+            var instructions = new ILStream(body.GetILAsByteArray());
+            Stack<int> sizeStack = new Stack<int>();
+            Dictionary<int, int> locals = new Dictionary<int, int>();
+            int idx = 0;
+
+            Action<int> popper = (a) => { if (sizeStack.Peek() != a) throw new Exception(); };
+            Action<int> pusher = (a) => { if (a == 0) throw new Exception(); sizeStack.Push(a); };
+            Action popper_store_sz = () =>
+            {
+                for (int i = 0; i < Tokens.Count; i++)
+                {
+                    if (Tokens[i].InstructionOffset == instructions.CurrentOffset)
+                    {
+                        Tokens[i].ParameterSizes[idx++] = sizeStack.Pop();
+                        break;
+                    }
+                }
+            };
+            Action popper_store_retvalsz = () =>
+            {
+                for (int i = 0; i < Tokens.Count; i++)
+                {
+                    if (Tokens[i].InstructionOffset == instructions.CurrentOffset)
+                    {
+                        Tokens[i].RetValSz = sizeStack.Pop();
+                        break;
+                    }
+                }
+            };
+
+            do
+            {
+                idx = 0;
+                var opc = instructions.GetCurrentOpCode();
+                var parsed_opc = Tokens.First(a => a.InstructionOffset == instructions.CurrentOffset);
+
+                switch (parsed_opc.Operation)
+                {
+                    case InstructionTypes.StLoc:
+                        locals[(int)parsed_opc.Constants[0]] = sizeStack.Peek();
+                        break;
+                }
+
+                switch (opc.StackBehaviourPop)
+                {
+                    case StackBehaviour.Pop0:
+                        break;
+
+                    case StackBehaviour.Pop1:
+                        //Learned a size
+                        popper_store_sz();
+                        break;
+
+                    case StackBehaviour.Pop1_pop1:
+                        popper_store_sz(); popper_store_sz();
+                        break;
+
+                    case StackBehaviour.Popi:
+                        popper(4);
+                        popper_store_sz();
+                        break;
+
+                    case StackBehaviour.Popi_popi:
+                        popper(4); popper_store_sz(); popper(4); popper_store_sz();
+                        break;
+
+                    case StackBehaviour.Popi_popi8:
+                        popper(4); popper_store_sz(); popper(8); popper_store_sz();
+                        break;
+
+                    case StackBehaviour.Popi_popi_popi:
+                        popper(4); popper_store_sz(); popper(4); popper_store_sz(); popper(4); popper_store_sz();
+                        break;
+
+                    case StackBehaviour.Popref:
+                        popper(8); popper_store_sz();
+                        break;
+
+                    case StackBehaviour.Popref_popi:
+                        popper(8); popper_store_sz(); popper(4); popper_store_sz();
+                        break;
+
+                    case StackBehaviour.Popref_popi_popi:
+                        popper(8); popper_store_sz(); popper(4); popper_store_sz(); popper(4); popper_store_sz();
+                        break;
+
+                    case StackBehaviour.Popref_popi_popi8:
+                        popper(8); popper_store_sz(); popper(4); popper_store_sz(); popper(8); popper_store_sz();
+                        break;
+
+                    case StackBehaviour.Popref_popi_popref:
+                        popper(8); popper_store_sz(); popper(4); popper_store_sz(); popper(8);
+                        break;
+
+                    case StackBehaviour.Varpop:
+                        switch (parsed_opc.Operation)
+                        {
+                            case InstructionTypes.CallVirt:
+                            case InstructionTypes.Call:
+                                {
+                                    for (int i = 0; i < parsed_opc.Parameters.Length; i++)
+                                    {
+                                        idx = parsed_opc.Parameters.Length - 1 - i;
+                                        popper_store_sz();
+                                    }
+                                }
+                                break;
+                            case InstructionTypes.Ret:
+                                {
+                                    if (sizeStack.Count > 0)
+                                    {
+                                        popper_store_retvalsz();
+                                    }
+                                }
+                                break;
+                            default:
+                                throw new Exception();
+                        }
+                        break;
+
+                    default:
+                        throw new Exception();
+                }
+
+                switch (opc.StackBehaviourPush)
+                {
+                    case StackBehaviour.Push0:
+                        break;
+                    case StackBehaviour.Pushi:
+                        pusher(4);
+                        break;
+                    case StackBehaviour.Pushi8:
+                        pusher(8);
+                        break;
+                    case StackBehaviour.Pushref:
+                        pusher(8);
+                        break;
+                    case StackBehaviour.Push1:
+                        switch (parsed_opc.Operation)
+                        {
+                            case InstructionTypes.Ldsfld:
+                                pusher(parsed_opc.RetValSz);
+                                break;
+                            case InstructionTypes.LdArg:
+                                pusher(parsed_opc.RetValSz);
+                                break;
+                            case InstructionTypes.LdLoc:
+                                pusher(locals[(int)parsed_opc.Constants[0]]);
+                                break;
+                            case InstructionTypes.And:
+                            case InstructionTypes.Or:
+                            case InstructionTypes.Xor:
+                            case InstructionTypes.Shl:
+                            case InstructionTypes.Shr:
+                            case InstructionTypes.ShrUn:
+                            case InstructionTypes.Add:
+                            case InstructionTypes.AddCheckOverflow:
+                            case InstructionTypes.UAddCheckOverflow:
+                            case InstructionTypes.Subtract:
+                            case InstructionTypes.SubtractCheckOverflow:
+                            case InstructionTypes.USubtractCheckOverflow:
+                            case InstructionTypes.Multiply:
+                            case InstructionTypes.MultiplyCheckOverflow:
+                            case InstructionTypes.UMultiplyCheckOverflow:
+                            case InstructionTypes.Divide:
+                            case InstructionTypes.UDivide:
+                                {
+                                    if (parsed_opc.ParameterSizes[0] <= 4 && parsed_opc.ParameterSizes[1] <= 4)
+                                        parsed_opc.RetValSz = 4;
+                                    else
+                                        parsed_opc.RetValSz = 8;
+                                    pusher(parsed_opc.RetValSz);
+                                }
+                                break;
+                            default:
+                                throw new Exception();
+                        }
+                        break;
+                    case StackBehaviour.Push1_push1:
+                        switch (parsed_opc.Operation)
+                        {
+                            case InstructionTypes.Dup:
+                                {
+                                    pusher(parsed_opc.ParameterSizes[0]);
+                                    pusher(parsed_opc.ParameterSizes[0]);
+                                }
+                                break;
+                        }
+                        break;
+                    case StackBehaviour.Varpush:
+                        switch (parsed_opc.Operation)
+                        {
+                            case InstructionTypes.Call:
+                            case InstructionTypes.CallVirt:
+                                if (parsed_opc.RetValSz != 0)
+                                    pusher(parsed_opc.RetValSz);
+                                break;
+                            default:
+                                throw new Exception();
+                        }
+                        break;
+                    default:
+                        throw new Exception();
+                }
+
+            } while (instructions.NextInstruction());
         }
 
         public SSAToken[] GetTokens()

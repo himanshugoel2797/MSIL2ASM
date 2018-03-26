@@ -13,7 +13,7 @@ namespace MSIL2ASM
         private static int StaticOffset = 0;
         private static int InstanceOffset = 0;
 
-        private static ParameterDef[] ParseParams(ParameterInfo[] ps, ParameterInfo ret, bool isInst, bool isConstructor, string parentName)
+        public static ParameterDef[] ParseParams(ParameterInfo[] ps, ParameterInfo ret, bool isInst, bool isConstructor, string parentName, string name)
         {
             List<ParameterDef> defs = new List<ParameterDef>();
 
@@ -22,7 +22,11 @@ namespace MSIL2ASM
                 defs.Add(new ParameterDef()
                 {
                     IsRetVal = true,
-                    Name = parentName,
+                    Name = name,
+                    ParameterType = new TypeDef()
+                    {
+                        FullName = parentName,
+                    }
                     //TODO handle ParameterType
                 });
             }
@@ -32,7 +36,12 @@ namespace MSIL2ASM
                 defs.Add(new ParameterDef()
                 {
                     IsIn = true,
-                    Name = parentName,
+                    Name = name,
+                    Index = 0,
+                    ParameterType = new TypeDef()
+                    {
+                        FullName = parentName
+                    }
                     //TODO handle ParameterType
                 });
             }
@@ -44,7 +53,14 @@ namespace MSIL2ASM
                     IsIn = ps[i].IsIn,
                     IsOut = ps[i].IsOut,
                     IsRetVal = ps[i].IsRetval,
+                    Index = ps[i].Position + (isInst ? 1 : 0),
                     Name = MachineSpec.GetTypeName(ps[i].ParameterType),
+                    ParameterType = new TypeDef()
+                    {
+                        FullName = ps[i].ParameterType.FullName,
+                        IsGenericParameter = ps[i].ParameterType.IsGenericParameter,
+                        IsGenericType = ps[i].ParameterType.IsGenericType,
+                    }
                     //TODO handle ParameterType
                 });
             }
@@ -55,11 +71,24 @@ namespace MSIL2ASM
                     IsIn = ret.IsIn,
                     IsOut = ret.IsOut,
                     IsRetVal = true,
+                    Index = defs.Count,
                     Name = MachineSpec.GetTypeName(ret.ParameterType),
+                    ParameterType = new TypeDef()
+                    {
+                        FullName = ret.ParameterType.FullName,
+                        IsGenericParameter = ret.ParameterType.IsGenericParameter,
+                        IsGenericType = ret.ParameterType.IsGenericType,
+                    }
                     //TODO handle ParameterType
                 });
 
-            return defs.ToArray();
+            if (isConstructor)
+                defs[0].Index = defs.Count - 1;
+
+            return defs.OrderBy(a =>
+            {
+                return a.Index + a.Name + (a.IsOut ? "_o" : "") + (a.IsIn ? "_i" : "") + (a.IsRetVal ? "_r" : "");
+            }).ToArray();
         }
 
         private static FieldDef ParseField(FieldInfo fakeInst, FieldInfo realInst)
@@ -87,6 +116,12 @@ namespace MSIL2ASM
                 MetadataToken = fakeInst.MetadataToken,
                 Size = sz,
                 Offset = offset,
+                FieldType = new TypeDef()
+                {
+                    FullName = realInst.FieldType.FullName,
+                    IsGenericParameter = realInst.FieldType.IsGenericParameter,
+                    IsGenericType = realInst.FieldType.IsGenericType,
+                }
                 //TODO figure out how to handle FieldType
             };
         }
@@ -97,22 +132,12 @@ namespace MSIL2ASM
             var mInfo = new MethodDef()
             {
                 Name = fakeInst.Name,
+                Aliases = new List<string>(),
                 IsConstructor = false,
                 IsStatic = fakeInst.IsStatic,
                 IsInternalCall = realInst.MethodImplementationFlags == MethodImplAttributes.InternalCall,
                 IsIL = realInst.MethodImplementationFlags == MethodImplAttributes.IL,
-                Parameters = ParseParams(fakeInst.GetParameters(), realInst.ReturnParameter, !fakeInst.IsStatic, false, MachineSpec.GetTypeName(tDef)).OrderBy(a =>
-                {
-                    if (a.IsIn)
-                        return 1;
-                    if (a.IsOut)
-                        return 2;
-
-                    if (a.IsRetVal)
-                        return 3;
-
-                    return 0;
-                }).ToArray(),
+                Parameters = ParseParams(fakeInst.GetParameters(), realInst.ReturnParameter, !fakeInst.IsStatic, false, tDef.FullName, MachineSpec.GetTypeName(tDef)),
                 ParentType = tDef,
 
                 MetadataToken = fakeInst.MetadataToken,
@@ -130,13 +155,18 @@ namespace MSIL2ASM
 
                 for (int j = 0; j < mBody.LocalVariables.Count; j++)
                 {
-                    //TODO figure out how to handle Locals TypeDef
-
-                    //if (mBody.LocalVariables[j].LocalType.IsValueType)
-                    //    mInfo.LocalsSize += Marshal.SizeOf(mBody.LocalVariables[j].LocalType);
-                    //else
+                    mInfo.Locals[j] = new TypeDef()
+                    {
+                        Name = MachineSpec.GetTypeName(mBody.LocalVariables[j].LocalType),
+                    };
                     mInfo.LocalsSize += MachineSpec.PointerSize;
                 }
+            }
+
+            var aliasAttrs = realInst.GetCustomAttributes(typeof(CoreLib.AliasAttribute)).ToArray();
+            for (int i = 0; i < aliasAttrs.Length; i++)
+            {
+                mInfo.Aliases.Add((aliasAttrs[i] as CoreLib.AliasAttribute).Name);
             }
 
             return mInfo;
@@ -148,22 +178,12 @@ namespace MSIL2ASM
             var mInfo = new MethodDef()
             {
                 Name = fakeInst.Name,
+                Aliases = new List<string>(),
                 IsConstructor = true,
                 IsStatic = fakeInst.IsStatic,
                 IsInternalCall = realInst.MethodImplementationFlags == MethodImplAttributes.InternalCall,
                 IsIL = realInst.MethodImplementationFlags == MethodImplAttributes.IL,
-                Parameters = ParseParams(fakeInst.GetParameters(), null, true, true, MachineSpec.GetTypeName(tDef)).OrderBy(a =>
-                {
-                    if (a.IsIn)
-                        return 1;
-                    if (a.IsOut)
-                        return 2;
-
-                    if (a.IsRetVal)
-                        return 3;
-
-                    return 0;
-                }).ToArray(),
+                Parameters = ParseParams(fakeInst.GetParameters(), null, true, true, tDef.FullName, MachineSpec.GetTypeName(tDef)),
                 ParentType = tDef,
 
                 MetadataToken = fakeInst.MetadataToken,
@@ -181,12 +201,18 @@ namespace MSIL2ASM
 
                 for (int j = 0; j < mBody.LocalVariables.Count; j++)
                 {
-                    //TODO figure out how to handle Locals TypeDef
                     mInfo.Locals[j] = new TypeDef()
                     {
                         Name = MachineSpec.GetTypeName(mBody.LocalVariables[j].LocalType),
                     };
+                    mInfo.LocalsSize += MachineSpec.PointerSize;
                 }
+            }
+
+            var aliasAttrs = realInst.GetCustomAttributes(typeof(CoreLib.AliasAttribute)).ToArray();
+            for (int i = 0; i < aliasAttrs.Length; i++)
+            {
+                mInfo.Aliases.Add((aliasAttrs[i] as CoreLib.AliasAttribute).Name);
             }
 
             return mInfo;
@@ -200,6 +226,8 @@ namespace MSIL2ASM
                 FullName = fakeType.FullName,
                 MetadataToken = fakeType.MetadataToken,
                 IsValueType = fakeType.IsValueType,
+                IsGenericParameter = fakeType.IsGenericParameter,
+                IsGenericType = fakeType.IsGenericType,
             };
 
             StaticOffset = 0;
@@ -267,6 +295,51 @@ namespace MSIL2ASM
             tDef.StaticSize = StaticOffset;
 
             return tDef;
+        }
+
+        public static void Reinit(Dictionary<string, TypeDef> tDefs)
+        {
+            for (int i = 0; i < tDefs.Keys.Count; i++)
+            {
+                var t = tDefs.Keys.ElementAt(i);
+                for (int j = 0; j < tDefs[t].InstanceFields.Length; j++)
+                {
+                    var key = tDefs[t].InstanceFields[j].FieldType;
+
+                    if (!key.IsGenericParameter)
+                        tDefs[t].InstanceFields[j].FieldType = tDefs[key.FullName];
+                }
+
+                for (int j = 0; j < tDefs[t].StaticFields.Length; j++)
+                {
+                    var key = tDefs[t].StaticFields[j].FieldType;
+
+                    if (!key.IsGenericParameter)
+                        tDefs[t].StaticFields[j].FieldType = tDefs[key.FullName];
+                }
+
+                for (int j = 0; j < tDefs[t].InstanceMethods.Length; j++)
+                {
+                    for(int k = 0; k < tDefs[t].InstanceMethods[j].Parameters.Length; k++)
+                    {
+                        var key = tDefs[t].InstanceMethods[j].Parameters[k].ParameterType;
+
+                        if (!key.IsGenericParameter && tDefs.ContainsKey(key.FullName))
+                            tDefs[t].InstanceMethods[j].Parameters[k].ParameterType = tDefs[key.FullName];
+                    }
+                }
+
+                for (int j = 0; j < tDefs[t].StaticMethods.Length; j++)
+                {
+                    for (int k = 0; k < tDefs[t].StaticMethods[j].Parameters.Length; k++)
+                    {
+                        var key = tDefs[t].StaticMethods[j].Parameters[k].ParameterType;
+
+                        if (!key.IsGenericParameter && tDefs.ContainsKey(key.FullName))
+                            tDefs[t].StaticMethods[j].Parameters[k].ParameterType = tDefs[key.FullName];
+                    }
+                }
+            }
         }
     }
 }

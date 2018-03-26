@@ -27,5 +27,20 @@ namespace MSIL2ASM.CoreLib
                 }
             }
         }
+
+        public int Length
+        {
+            get
+            {
+                unsafe
+                {
+                    fixed (char* chars = &m_firstChar)
+                    {
+                        int* len = (int*)chars;
+                        return len[-1];
+                    }
+                }
+            }
+        }
     }
 }

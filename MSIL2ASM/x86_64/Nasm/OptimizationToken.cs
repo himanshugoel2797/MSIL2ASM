@@ -32,6 +32,7 @@ namespace MSIL2ASM.x86_64.Nasm
         Pop,
         Ret,
         Switch,
+        New,
     }
 
     [Flags]
@@ -56,6 +57,7 @@ namespace MSIL2ASM.x86_64.Nasm
         Token = 32768,
         Function = 65536,
         Object = 33554432,
+        Array = 134217728,
         VirtFunction = 67108864,
 
         CheckOverflow = 131072,

@@ -16,7 +16,7 @@ namespace MSIL2ASM.Driver
             Environment.CurrentDirectory = Path.GetDirectoryName(Path.GetFullPath(args[0]));
             AppDomain.CurrentDomain.ReflectionOnlyAssemblyResolve += CurrentDomain_ReflectionOnlyAssemblyResolve;
 
-            var assem = Assembly.ReflectionOnlyLoadFrom(Path.GetFullPath(args[0]));
+            var assem = Assembly.LoadFrom(Path.GetFullPath(args[0]));
 
             AssemblyParser p = new AssemblyParser();
             p.Load(assem, args[1]);

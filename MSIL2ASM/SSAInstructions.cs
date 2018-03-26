@@ -25,29 +25,22 @@ namespace MSIL2ASM
         BltUn,
         BneUn,
         Br,         //Unconditional branch
-        Break,      //TODO
         BrFalse,    //Branch if zero
         BrTrue,     //Branch if not zero
         Call,
-        Calli,
         Ceq,
         Cgt,
         CgtUn,
-        CkFinite,   //TODO
         Clt,
         CltUn,
         Convert,    //Convert integer
         ConvertCheckOverflow,   //Convert integer, checking for overflow
-        CpBlk,      //TODO
         Divide,
         UDivide,
         Dup,
-        EndFilter,  //TODO
         EndFinally,
-        InitBlk,    //TODO
-        Jmp,        //TODO
         LdArg,      //Load argument
-        LdArga,
+        LdArga,     //Load argument address
         Ldc,        //Load constant
         Ldftn,
         LdInd,
@@ -83,7 +76,6 @@ namespace MSIL2ASM
         CallVirt,
         CallVirtConstrained,
         CastClass,  //TODO
-        CpObj,      //TODO
         InitObj,    //TODO
         IsInst,     //TODO
         Ldelem,
